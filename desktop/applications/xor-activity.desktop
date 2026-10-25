@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=XOR Activity
+GenericName=Broker Audit Log Viewer
+Comment=Inspect broker approvals, denials and failures
+Exec=xor-activity
+Icon=utilities-system-monitor
+Terminal=false
+Categories=System;Security;Monitor;
+Keywords=audit;log;permissions;activity;

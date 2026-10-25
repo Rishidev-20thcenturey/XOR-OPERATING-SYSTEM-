@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=XOR Permission Broker
+Comment=Default-deny permission broker for XOR tools (per-user session service)
+Exec=xor-broker-autostart
+Icon=security-high
+Terminal=false
+NoDisplay=true
+X-GNOME-Autostart-enabled=true

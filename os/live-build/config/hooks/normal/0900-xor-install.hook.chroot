@@ -1,0 +1,71 @@
+#!/bin/sh
+# Install XOR components staged into /opt/xor-dist by tools/build-iso.sh.
+# Runs inside the chroot during `lb build`.  Fails loudly (set -e) if the
+# staging step was skipped, so we never ship an image silently missing
+# the broker.
+set -eu
+
+DIST=/opt/xor-dist
+if [ ! -d "$DIST/broker" ]; then
+    echo "ERROR: $DIST/broker missing - build via tools/build-iso.sh (it stages XOR sources)" >&2
+    exit 1
+fi
+
+echo "Installing XOR broker + desktop components..."
+
+# 1. Python sources under /usr/local/lib (kept out of Debian's paths).
+install -d /usr/local/lib/xor-broker /usr/local/lib/xor-desktop /usr/local/lib/xor-assistant
+cp -r "$DIST/broker/src/xor_broker" /usr/local/lib/xor-broker/
+cp "$DIST/desktop/activity_core.py" "$DIST/desktop/xor_activity.py" /usr/local/lib/xor-desktop/
+cp -r "$DIST/assistant/src/xor_assistant" /usr/local/lib/xor-assistant/
+
+# activity_core locates the broker relative to itself; on the installed
+# system point it at /usr/local/lib via a small path shim.
+cat > /usr/local/lib/xor-desktop/xor_broker_path.pth.py <<'EOF'
+import sys
+for p in ("/usr/local/lib/xor-broker", "/usr/local/lib/xor-assistant"):
+    if p not in sys.path:
+        sys.path.insert(0, p)
+EOF
+
+# 2. Command wrappers on PATH.
+cat > /usr/local/bin/xor-broker <<'EOF'
+#!/bin/sh
+exec env PYTHONPATH=/usr/local/lib/xor-broker python3 -m xor_broker.cli "$@"
+EOF
+cat > /usr/local/bin/xor-activity <<'EOF'
+#!/bin/sh
+exec env PYTHONPATH=/usr/local/lib/xor-desktop:/usr/local/lib/xor-broker python3 /usr/local/lib/xor-desktop/xor_activity.py "$@"
+EOF
+install -m 0755 "$DIST/desktop/scripts/xor-broker-autostart.sh" /usr/local/bin/xor-broker-autostart
+install -m 0755 "$DIST/desktop/scripts/xor-broker-demo-run.sh" /usr/local/bin/xor-broker-demo-run
+install -m 0755 "$DIST/broker/examples/demo_reader.py" /usr/local/bin/xor-demo-reader
+install -m 0755 "$DIST/broker/examples/demo_writer.py" /usr/local/bin/xor-demo-writer
+chmod 0755 /usr/local/bin/xor-broker /usr/local/bin/xor-activity
+# Example tools need the broker package importable:
+for tool in xor-demo-reader xor-demo-writer; do
+    sed -i '1i import sys; sys.path.insert(0, "/usr/local/lib/xor-broker")' "/usr/local/bin/$tool"
+done
+sed -i 's|^#!/usr/bin/env python3|#!/usr/bin/python3|' /usr/local/bin/xor-demo-reader /usr/local/bin/xor-demo-writer
+
+# 3. Menu entries + session autostart of the per-user broker daemon.
+install -m 0644 "$DIST/desktop/applications/xor-broker-demo.desktop" /usr/share/applications/
+install -m 0644 "$DIST/desktop/applications/xor-activity.desktop" /usr/share/applications/
+install -d /etc/xdg/autostart
+install -m 0644 "$DIST/desktop/applications/xor-broker-autostart.desktop" /etc/xdg/autostart/
+
+# 4. Branding: wallpaper + XFCE defaults for every new user (skel).
+install -d /usr/share/xor
+install -m 0644 "$DIST/desktop/theme/wallpaper.png" /usr/share/xor/wallpaper.png
+install -d /etc/skel/.config
+cp -r "$DIST/desktop/theme/xfce4" /etc/skel/.config/
+
+# 5. Identity.
+printf 'XOR OS 0.1 (baseline) - Debian trixie based\n' > /etc/xor-release
+
+# 6. Sanity: the installed broker must import and run its self-check demo
+#    machinery headlessly.  (Full security corpus runs in CI, not here.)
+PYTHONPATH=/usr/local/lib/xor-broker python3 -c "import xor_broker; print('xor_broker', xor_broker.__version__)"
+PYTHONPATH=/usr/local/lib/xor-desktop:/usr/local/lib/xor-broker python3 -c "import activity_core; print('activity_core OK')"
+
+echo "XOR components installed."

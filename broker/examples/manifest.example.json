@@ -1,0 +1,31 @@
+{
+  "capabilities": [
+    {
+      "capability_id": "reader-notes-001",
+      "tool": "demo-reader",
+      "operation": "read_file",
+      "resource": {"type": "file", "path": "~/XOR-Demo/notes.txt"},
+      "rights": ["read"],
+      "expires_at": null,
+      "max_uses": null
+    },
+    {
+      "capability_id": "writer-summary-001",
+      "tool": "demo-writer",
+      "operation": "write_file",
+      "resource": {"type": "file", "path": "~/XOR-Demo/summary.txt"},
+      "rights": ["write"],
+      "expires_at": null,
+      "max_uses": 10
+    },
+    {
+      "capability_id": "reader-shared-dir-001",
+      "tool": "demo-reader",
+      "operation": "list_dir",
+      "resource": {"type": "dir", "path": "~/XOR-Demo/shared"},
+      "rights": ["read"],
+      "expires_at": null,
+      "max_uses": null
+    }
+  ]
+}

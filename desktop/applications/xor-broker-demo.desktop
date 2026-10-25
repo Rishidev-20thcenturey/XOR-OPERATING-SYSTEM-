@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=XOR Broker Demo
+GenericName=Permission Broker Demonstration
+Comment=See default-deny permissions, write confirmation and auditing work
+Exec=xfce4-terminal --title="XOR Broker Demo" --command="xor-broker-demo-run"
+Icon=security-high
+Terminal=false
+Categories=System;Security;
+Keywords=permissions;broker;security;demo;

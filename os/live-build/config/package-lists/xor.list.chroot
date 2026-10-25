@@ -1,0 +1,53 @@
+# XOR OS baseline package selection (Debian trixie, amd64).
+# Everything here is free/open-source from Debian main (firmware area is
+# enabled for install-time hardware support; the QEMU virtio target
+# needs no non-free firmware).
+
+# --- Desktop session: XFCE (baseline; original shell comes later) ---
+xfce4
+xfce4-terminal
+xfce4-screenshooter
+xfce4-taskmanager
+Thunar-volman
+tumbler
+gvfs
+gvfs-backends
+mousepad
+ristretto
+lightdm
+lightdm-gtk-greeter
+xorg
+
+# --- XOR appearance (see desktop/theme/) ---
+arc-theme
+papirus-icon-theme
+fonts-Inter
+fonts-DejaVu
+
+# --- System integration ---
+network-manager
+network-manager-gnome
+pipewire-audio
+sudo
+policykit-1
+dbus
+udisks2
+upower
+qemu-guest-agent
+
+# --- XOR broker + desktop components runtime ---
+python3
+python3-gi
+gir1.2-gtk-3.0
+
+# --- Everyday tools (reuse, don't reinvent) ---
+firefox-esr
+vim-tiny
+curl
+git
+
+# --- Live system plumbing (normally pulled in by live-build) ---
+live-boot
+live-config
+live-config-systemd
+systemd-sysv
