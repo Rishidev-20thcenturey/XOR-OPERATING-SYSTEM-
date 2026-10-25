@@ -52,8 +52,10 @@ corpus regenerates byte-identically, 3 XFCE XML files well-formed,
 Aurora install wiring complete, 10 shell scripts parse, legacy PNG
 1920×1080, CSS classes/braces, SVG logo, Royal Aurora JPEG and XFCE
 default agree, and headless XOR Shell/Control Centre commands run.
-Pyflakes is **clean** in the pytest venv run. *SKIPPED in sandbox:*
-shellcheck (not installed there; runs in CI).
+Pyflakes is **clean** in the pytest venv run. ShellCheck is clean
+locally under both 0.10 and 0.11 after fixing SC2012/SC2015 findings,
+and GitHub Actions PR #2 is green (Python 3.11, Python 3.12 and
+ShellCheck jobs).
 
 ## Demo executions — PASS
 
