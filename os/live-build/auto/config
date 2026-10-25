@@ -1,0 +1,30 @@
+#!/bin/sh
+# Debian Live Build configuration for XOR OS (baseline).
+# Base: Debian 13 "trixie" (stable), x86-64, XFCE desktop.
+# See docs/DEVELOPMENT.md for the full build workflow and docs/adr/
+# 0001-reuse-Debian-linux.md for why we build on Debian instead of
+# writing a kernel/userspace from scratch.
+set -e
+
+lb config noauto \
+    --mode Debian \
+    --distribution trixie \
+    --architectures amd64 \
+    --linux-flavours amd64 \
+    --linux-packages "linux-image" \
+    --archive-areas "main contrib non-free-firmware" \
+    --apt-indices false \
+    --apt-recommends true \
+    --binary-images iso-hybrid \
+    --bootloaders "syslinux,grub-efi" \
+    --bootappend-live "boot=live components hostname=XOR username=user" \
+    --iso-application "XOR OS" \
+    --iso-publisher "XOR OS project" \
+    --iso-volume "XOR-OS 0.1" \
+    --memtest none \
+    --net-root-path "/srv/xor" \
+    --security true \
+    --updates true \
+    --firmware-chroot true \
+    --firmware-binary false \
+    "$@"

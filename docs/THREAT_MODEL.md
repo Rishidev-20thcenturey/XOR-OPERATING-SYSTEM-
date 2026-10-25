@@ -1,0 +1,57 @@
+# Threat model — XOR OS baseline
+
+Honesty rule for this document: every protection below is labelled
+**Prevents**, **Detects** or **Does not address**, and only claims what
+is implemented *and tested* (see `docs/TEST_RESULTS.md`).
+
+## Assets and actors
+
+Assets: user files, user consent (write approvals), audit integrity,
+the user's trust that "denied" means did-not-happen.
+Actors: misleading documents/tool output (prompt injection), buggy or
+malicious cooperating tools, malicious local same-user processes,
+network attackers, a compromised update channel (future), root/kernel
+compromise (out of scope, stated plainly).
+
+## Trust boundary
+
+The broker mediates calls made **through its API** by cooperating
+tools. It runs as the user, never root. It is *not* a syscall firewall
+and does not by itself confine arbitrary processes.
+
+## Threats
+
+| # | Threat | Baseline position |
+|---|---|---|
+| T1 | Document text instructs the assistant/tool to read/exfiltrate files (prompt injection) | **Prevents** (within broker): policy never reads untrusted text; 50 corpus scenarios + twin checks prove decisions are text-independent. No network op exists to grant. |
+| T2 | Tool requests outside its grant (sibling files, parent dir, other tool's grant) | **Prevents**: default-deny + exact scope matching; 100 out-of-grant corpus scenarios, 0 executed. |
+| T3 | Path traversal (`../`, odd spellings) | **Prevents**: canonicalisation at policy + FD-anchored enforcement rejecting `..`/escapes. |
+| T4 | Symlink escape (inside granted dir → outside) | **Prevents**: `O_NOFOLLOW` on every component; symlink reads/writes fail closed (corpus + unit tests, incl. no side-effects on denied write-through). |
+| T5 | TOCTOU: swap path between check and open | **Prevents (mostly)**: traversal anchored to open directory FDs. Residual: hard-linked inode inside a granted dir aliasing an outside inode; mitigated for file-selection grants by inode pinning. Documented in `paths.py`. |
+| T6 | Write slips through without the user noticing | **Prevents**: every write needs a fresh confirmation; deny default (EOF/Esc/timeout/provider crash all deny); approval bound to exact action digest, single-use, 120 s TTL. Replayed/stale/cross-action tokens rejected in tests. |
+| T7 | Fake "user approved" text in a document | **Prevents**: approvals come only from the confirmation provider; corpus category `injection_fake_approval` verifies denial. |
+| T8 | Malformed/over-broad capability manifest | **Prevents**: strict validation, whole load fails closed; unsupported ops (delete/network/exec) are ungrantable. |
+| T9 | Audit log leaks private content | **Prevents by design + test**: records contain digests/metadata only; corpus scans logs for content markers (0 leaks). File mode 0600 in 0700 dir. |
+| T10 | Audit log tampering after the fact | **Detects**: SHA-256 hash chain; `verify` finds edits/deletions/reordering (tested). **Limits:** an attacker controlling both log and verifier (e.g. root) can forge a consistent chain — a local chain is tamper-*evidence*, not tamper-proofing. |
+| T11 | Tool impersonation over the Unix socket | **Does not address (yet)**: tool names are self-declared; socket is 0600 per-user and peer UID/PID recorded, but a same-user process could claim another tool's name. Needs sandbox/portal identity (M4). Capabilities therefore separate *cooperating* tools, not hostile same-user code. |
+| T12 | Malicious same-user process bypasses broker entirely (opens files itself) | **Does not address**: by design, baseline mediation is API-level. Mitigation path = run tools/assistant under bubblewrap/Flatpak with broker as only egress (M4). Never claim otherwise. |
+| T13 | Compromised user account / root / kernel / firmware | **Does not address**: out of scope for a user-space broker. Disk encryption, secure boot etc. belong to later system hardening. |
+| T14 | Malicious/botched OS update | **Does not address yet**: no updater exists. A/B design + failure matrix in `UPDATE_DESIGN.md`; nothing is signed or rolled back today, and we do not claim it is. |
+| T15 | Denial of service via request flooding / huge files | Partial: reads capped at 16 MiB; no rate limiting yet. Fails safe (deny/error), not unsafe. |
+| T16 | User confused into approving a harmful write | Mitigated, not solved: prompt shows tool, operation, exact target, description and bounded content preview + digest; deny is the focused default. UX phishing research is future work. |
+
+## Assumptions
+
+* The Linux kernel, Debian userspace and the user's session are not
+  already compromised.
+* The capability manifest itself is user-controlled configuration
+  (0600-by-default XDG paths are the user's responsibility to review;
+  `xor-broker grants` displays exactly what is granted).
+* Timestamps use the local clock; expiry is a usability control, not a
+  monotonic security guarantee (see UPDATE_DESIGN re: downgrades).
+
+## Explicit non-claims
+
+Not formally verified. Not enterprise-secure. Not unbreakable. Not
+system-enforced. It is a small, tested authorisation boundary for
+cooperating tools — the foundation stronger isolation will build on.

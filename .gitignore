@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.egg-info/
+.venv*/
+
+# Build artifacts
+*.iso
+*.img
+*.qcow2
+xor-serial.log
+os/live-build/cache/
+os/live-build/chroot/
+os/live-build/binary*/
+os/live-build/.build/
+os/live-build/build.log
+os/live-build/BUILD-MANIFEST.txt
+os/live-build/*.sha256
+# Staged into the image by tools/build-iso.sh; source of truth is the repo
+os/live-build/config/includes.chroot/opt/xor-dist/
+
+# Test run output (the canonical corpus is scenarios.json)
+security/corpus/last_results.json
+
+# Editor noise
+*.swp
+.DS_Store
+
+.pytest_cache/

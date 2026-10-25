@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<!-- Window manager: match GTK theme, readable title font,
+     conventional button layout (menu left; min/max/close right). -->
+<channel name="xfwm4" version="1.0">
+  <property name="general" type="empty">
+    <property name="theme" type="string" value="Arc-Dark"/>
+    <property name="title_font" type="string" value="Inter Bold 10"/>
+    <property name="button_layout" type="string" value="O|HMC"/>
+    <property name="workspace_count" type="int" value="2"/>
+    <property name="use_compositing" type="bool" value="true"/>
+  </property>
+</channel>
