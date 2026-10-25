@@ -28,7 +28,10 @@ df_avail=$(df --output=avail -BG "$REPO" | tail -1 | tr -dc '0-9')
 
 if [ "${1:-}" = "--clean" ]; then
     info "Cleaning previous build"
-    (cd "$LBDIR" && lb clean || true)
+    (
+        cd "$LBDIR" || exit 0
+        lb clean || true
+    )
     rm -rf "$STAGE" "$LBDIR"/cache "$LBDIR"/*.iso "$LBDIR"/*.sha256 "$LBDIR"/BUILD-MANIFEST.txt
 fi
 
