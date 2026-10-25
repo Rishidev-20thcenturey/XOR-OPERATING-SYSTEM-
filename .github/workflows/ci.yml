@@ -16,7 +16,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python }}
-      - name: Install dev tools (runtime deps: none, stdlib only)
+      - name: "Install dev tools (runtime deps: none, stdlib only)"
         run: pip install pytest pyflakes
       - name: Static validation
         run: python tools/validate.py
