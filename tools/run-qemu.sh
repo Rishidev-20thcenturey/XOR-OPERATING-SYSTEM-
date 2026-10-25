@@ -39,7 +39,7 @@ command -v qemu-system-x86_64 >/dev/null 2>&1 || {
 }
 
 if [ -z "$ISO" ]; then
-    ISO=$(ls -t "$REPO"/os/live-build/*.iso 2>/dev/null | head -n1 || true)
+    ISO=$(find "$REPO/os/live-build" -maxdepth 1 -name '*.iso' -type f -printf '%T@ %p\n' 2>/dev/null | sort -nr | head -n1 | cut -d' ' -f2- || true)
     [ -n "$ISO" ] || { echo "ERROR: no ISO found in os/live-build/. Build one: sudo tools/build-iso.sh" >&2; exit 1; }
 fi
 [ -f "$ISO" ] || { echo "ERROR: '$ISO' not found" >&2; exit 1; }

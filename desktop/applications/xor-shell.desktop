@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=XOR Shell
+GenericName=Aurora Desktop Shell
+Comment=Launch the XOR glass panel, floating dock and app launcher
+Exec=xor-shell
+Icon=xor-logo
+Terminal=false
+Categories=System;DesktopSettings;
+Keywords=xor;shell;dock;panel;launcher;desktop;
+StartupNotify=false

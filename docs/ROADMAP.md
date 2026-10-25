@@ -26,10 +26,15 @@ Status key: ✅ implemented & tested · 🧪 implemented, partly verified ·
 * 🧪 GTK confirmation dialog & GTK activity viewer: written to the
   keyboard contract (Deny focused, Esc denies, mnemonics, Ctrl+1–4),
   **need on-desktop verification** once the ISO boots
-* ✅ Theme, wallpaper, menu entries, broker autostart, visible demo
+* 🧪 XOR Shell “Aurora”: glass panel, floating dock, searchable launcher,
+  Command Centre and Control Centre implemented over XFCE/X11; core logic
+  and headless CLIs are tested, GTK placement/focus/Wnck still need a booted ISO
+* ✅ Royal Aurora wallpaper set, glass-X logo, shell/control menu entries,
+  broker + Aurora autostart, visible demo
 * ⬜ File-chooser grant flow in GTK (library support exists:
   `manifest.grant_for_selected_file` with inode pinning)
-* ⬜ Panel branding (default XFCE panel kept on purpose, see theme README)
+* ⬜ Replace fallback XFCE panel only after Aurora passes daily-use,
+  multi-monitor, focus and recovery-session checks
 
 ## Milestone 3 — Updater prototype + read-only assistant 📝/⬜
 
@@ -55,9 +60,10 @@ Status key: ✅ implemented & tested · 🧪 implemented, partly verified ·
 
 1. **Build & boot the ISO on a real dev machine** (`sudo tools/build-iso.sh`,
    `tools/run-qemu.sh`); fix live-build fallout; record evidence + screenshots.
-2. **On-desktop Milestone-2 verification**: GTK confirmation keyboard
-   flow end-to-end through the daemon (deny default, Esc, timeout),
-   activity viewer, demo launcher.
+2. **On-desktop Milestone-2 verification**: Aurora panel/dock/launcher,
+   Command/Control Centre, GTK confirmation keyboard flow end-to-end
+   through the daemon (deny default, Esc, timeout), activity viewer and
+   demo launcher; capture screenshots and fix focus/placement issues.
 3. **Isolation spike**: run `xor-demo-reader` under bubblewrap with the
    broker socket as its only file access; measure what breaks — this
    de-risks Milestones 3–4 and hardens the identity story.

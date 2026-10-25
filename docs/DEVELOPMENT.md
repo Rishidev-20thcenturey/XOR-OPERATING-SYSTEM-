@@ -26,6 +26,27 @@ Config lives under XDG dirs (`~/.config/xor/broker/manifest.json`,
 `~/.local/state/xor/broker/audit.jsonl`, `$XDG_RUNTIME_DIR/xor-broker.sock`),
 overridable via flags/env — see `broker/src/xor_broker/config.py`.
 
+## XOR Shell without the ISO
+
+On a graphical Linux machine with `python3-gi` + GTK 3 installed:
+
+```sh
+PYTHONPATH=desktop:broker/src python3 -m xor_shell
+PYTHONPATH=desktop:broker/src python3 -m xor_shell --launcher
+PYTHONPATH=desktop:broker/src python3 -m xor_shell.control_center
+```
+
+The headless checks used in CI are:
+
+```sh
+PYTHONPATH=desktop:broker/src python3 -m xor_shell --status-json
+PYTHONPATH=desktop:broker/src python3 -m xor_shell --list-apps
+PYTHONPATH=desktop:broker/src python3 -m xor_shell.control_center --text
+```
+
+Shell settings live in `~/.config/xor/shell.json`; see
+`docs/XOR_SHELL.md` for the keyboard contract and honest preview limits.
+
 ## Building & booting the OS image (team machine)
 
 ```sh
@@ -37,8 +58,10 @@ tools/run-qemu.sh --fresh      # recreate the 16G qcow2 first (xor-QEMU-disk.qco
 ```
 
 Live user `user`, password `live` if prompted (autologin on). In the
-session: **XOR Broker Demo** and **XOR Activity** in the menu; the
-broker daemon autostarts (`xor-broker serve --confirm gtk`).
+session: **XOR Broker Demo**, **XOR Activity**, **XOR Shell** and
+**XOR Control Centre** in the menu; the broker daemon autostarts
+(`xor-broker serve --confirm gtk`) and Aurora autostarts as an
+experience layer while XFCE remains the fallback.
 
 Debugging a failed boot: `--headless`, edit the boot line to add
 `console=ttyS0`, read `xor-serial.log`; or QEMU monitor with
@@ -52,6 +75,8 @@ Ctrl+Alt+2. KVM missing ⇒ TCG emulation (works, slow).
 | New broker operation | `models.py` (enum), `executor.py`, manifest support, tests — and a threat-model note |
 | Confirmation look/feel | `confirm_gtk.py` / `confirm.py` only (never weaken deny-default) |
 | Log viewing | `desktop/activity_core.py` (logic) → `xor_activity.py` (UI) |
+| Shell apps/search/config/status | `desktop/xor_shell/core.py` (logic + tests) → `app.py` / `control_center.py` (GTK) |
+| Shell visuals | `desktop/xor_shell/assets/style.css`, `desktop/theme/wallpapers/`, `xor-logo.svg` |
 | OS contents | `os/live-build/config/package-lists/` + hook; never hand-stage `opt/xor-dist` |
 | Assistant | `assistant/` — keep disabled until the M3 gate in `ROADMAP.md` |
 
@@ -61,6 +86,6 @@ every security-relevant change ships a test; update
 
 ## Repository map
 
-`broker/` the product core · `desktop/` viewer/theme/launchers ·
+`broker/` the product core · `desktop/` Aurora shell/viewer/theme/launchers ·
 `assistant/` disabled stub · `security/` corpus · `os/live-build/`
 image · `tools/` build/run/test/validate · `docs/` + `docs/adr/`.

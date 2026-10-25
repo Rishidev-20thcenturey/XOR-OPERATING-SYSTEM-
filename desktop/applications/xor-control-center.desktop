@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=XOR Control Centre
+GenericName=Settings
+Comment=Personalise XOR, review security and inspect your system
+Exec=xor-control-center
+Icon=preferences-system
+Terminal=false
+Categories=Settings;System;DesktopSettings;
+Keywords=xor;settings;appearance;security;wallpaper;control;
+StartupNotify=true

@@ -16,8 +16,8 @@ tools/validate.sh    # static checks: compile, pyflakes, XML/JSON/shell...
 | Broker end-to-end | `broker/tests/test_broker_e2e.py` | confirmation binding/staleness/replay, deny-by-default CLI, audit completeness + redaction + tamper detection, manifest rejection, real Unix-socket round-trip |
 | Security corpus | `security/` (200 scenarios) | Milestone-1 acceptance criteria, below |
 | Assistant gate | `assistant/tests/` | assistant disabled; declared surface read-only & broker-mapped; no direct file/network APIs in the stub |
-| Viewer core | `desktop/tests/` | audit loading/filter/search/chain status behind the GTK UI |
-| Static validation | `tools/validate.py` | 28 Python files compile + pyflakes, corpus byte-deterministic, theme XML well-formed, `.desktop` keys, shell `sh -n`, wallpaper PNG 1920×1080 |
+| Viewer + Aurora cores | `desktop/tests/` | audit loading/filter/search/chain status; XOR Shell app discovery/search, config sanitising/round-trip, battery/network/memory parsers, wallpaper catalog and Control Centre text mode |
+| Static validation | `tools/validate.py` | Python compile + pyflakes, corpus byte-deterministic, theme XML well-formed, `.desktop` keys/commands, shell `sh -n`, wallpaper/logo/CSS checks, live-build Aurora wiring, headless shell CLI |
 
 ## The 200-scenario corpus
 
@@ -56,10 +56,13 @@ expectation is corrected with a written justification.
 
 ## Not covered yet
 
-* GTK dialogs (need a display): `confirm_gtk.py`, `xor_activity.py` GTK
-  mode are compile-checked and logic-reviewed; on-desktop keyboard
-  verification (Esc denies, Deny focused, Ctrl+1–4 filters) is a
-  Milestone-2 checklist item — `xor-activity --text` *is* exercised.
+* GTK windows (need a display): `confirm_gtk.py`, `xor_activity.py` GTK
+  mode, XOR Shell and Control Centre are compile-checked and their
+  non-GTK cores/headless CLIs are tested; on-desktop verification
+  (Esc denies, Deny focused, launcher search/focus, Wnck window buttons,
+  Ctrl+1–4 activity filters) is a Milestone-2 checklist item —
+  `xor-activity --text`, `xor-shell --status-json` and
+  `xor-control-center --text` *are* exercised.
 * ISO boot in QEMU (no QEMU/live-build in the dev sandbox):
   run `sudo tools/build-iso.sh && tools/run-qemu.sh` on a team machine
   and record the result in `TEST_RESULTS.md`.

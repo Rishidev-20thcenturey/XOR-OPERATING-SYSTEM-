@@ -28,7 +28,10 @@ df_avail=$(df --output=avail -BG "$REPO" | tail -1 | tr -dc '0-9')
 
 if [ "${1:-}" = "--clean" ]; then
     info "Cleaning previous build"
-    (cd "$LBDIR" && lb clean || true)
+    (
+        cd "$LBDIR" || exit 0
+        lb clean || true
+    )
     rm -rf "$STAGE" "$LBDIR"/cache "$LBDIR"/*.iso "$LBDIR"/*.sha256 "$LBDIR"/BUILD-MANIFEST.txt
 fi
 
@@ -47,7 +50,7 @@ sh auto/config
 info "Building (lb build) - this downloads Debian packages, be patient"
 lb build 2>&1 | tee build.log
 
-ISO=$(ls -1 ./*.iso 2>/dev/null | head -n1 || true)
+ISO=$(find . -maxdepth 1 -name '*.iso' -type f -print | sort | head -n1 || true)
 [ -n "$ISO" ] || fail "Build finished but no ISO was produced; see $LBDIR/build.log"
 
 info "Checksumming and writing build manifest"
