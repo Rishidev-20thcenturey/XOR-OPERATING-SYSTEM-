@@ -31,7 +31,8 @@
 | Broker daemon/CLI | `.../server.py`, `.../cli.py` | Unix-socket IPC (`0600`), `xor-broker demo/init/serve/request/audit/grants` | broker core |
 | GTK confirmation | `.../confirm_gtk.py` | Write-approval dialog (lazy `gi` import; fail-closed if absent) | PyGObject at runtime only |
 | Activity viewer | `desktop/xor_activity.py`, `activity_core.py` | Inspect audit log; GTK + `--text` modes | audit log format |
-| Theme/launchers | `desktop/theme/`, `desktop/applications/` | XFCE defaults, wallpaper, menu entries, autostart | XFCE |
+| XOR Shell “Aurora” | `desktop/xor_shell/` | Glass panel, floating dock, launcher, Command Centre, Control Centre; testable non-GTK core | GTK 3, optional Wnck, XFCE/X11 session |
+| Theme/launchers | `desktop/theme/`, `desktop/applications/` | XFCE defaults, Royal Aurora wallpapers/logo, menu entries, broker + shell autostart | XFCE |
 | Assistant stub | `assistant/src/xor_assistant/` | Future connection point; **disabled**, read-only declared surface | broker client (future) |
 | Security corpus | `security/` | 200 deterministic scenarios + acceptance criteria | broker public API |
 | OS image | `os/live-build/` | Debian trixie + XFCE live ISO assembling all of the above | Debian Live Build |

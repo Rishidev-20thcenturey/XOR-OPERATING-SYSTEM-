@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=XOR Launcher
+GenericName=Application Launcher
+Comment=Search and launch applications with the XOR Aurora launcher
+Exec=xor-shell --launcher
+Icon=xor-logo
+Terminal=false
+NoDisplay=true
+Categories=System;Utility;
+Keywords=xor;launcher;search;apps;
+StartupNotify=false

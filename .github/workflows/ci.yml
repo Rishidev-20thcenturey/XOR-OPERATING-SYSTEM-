@@ -35,7 +35,8 @@ jobs:
             os/live-build/auto/config os/live-build/auto/build os/live-build/auto/clean \
             os/live-build/config/hooks/normal/0900-xor-install.hook.chroot \
             desktop/scripts/xor-broker-autostart.sh \
-            desktop/scripts/xor-broker-demo-run.sh
+            desktop/scripts/xor-broker-demo-run.sh \
+            desktop/scripts/xor-shell-autostart.sh
 
   # NOTE: no ISO build job. Debian Live Build needs root + mirror access
   # + GBs of packages; fast, honest CI matters more for the baseline.

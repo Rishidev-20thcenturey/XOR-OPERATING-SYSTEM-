@@ -98,12 +98,21 @@ def t_xml():
 def t_desktop_files():
     d = os.path.join(REPO, "desktop/applications")
     files = [f for f in os.listdir(d) if f.endswith(".desktop")]
-    assert len(files) >= 3
+    assert len(files) >= 7, files
+    required_exec = {
+        "xor-shell.desktop": "Exec=xor-shell",
+        "xor-shell-launcher.desktop": "Exec=xor-shell --launcher",
+        "xor-control-center.desktop": "Exec=xor-control-center",
+        "xor-shell-autostart.desktop": "Exec=xor-shell-autostart",
+    }
     for f in files:
         text = open(os.path.join(d, f)).read()
         for key in ("[Desktop Entry]", "Type=", "Name=", "Exec="):
             assert key in text, f"{f} missing {key}"
-    return f"{len(files)} entries have required keys"
+    for filename, exec_line in required_exec.items():
+        text = open(os.path.join(d, filename)).read()
+        assert exec_line in text, f"{filename} lacks {exec_line}"
+    return f"{len(files)} entries have required keys + Aurora commands"
 
 
 def t_livebuild_tree():
@@ -119,7 +128,17 @@ def t_livebuild_tree():
     config = open(os.path.join(base, "auto/config")).read()
     for needle in ("trixie", "amd64", "iso-hybrid"):
         assert needle in config, f"auto/config lacks {needle}"
-    return "config, hook, package list present"
+    packages = open(os.path.join(base, "config/package-lists/xor.list.chroot")).read()
+    for needle in ("gir1.2-wnck-3.0", "pavucontrol", "procps"):
+        assert needle in packages, f"package list lacks {needle}"
+    hook = open(os.path.join(
+        base, "config/hooks/normal/0900-xor-install.hook.chroot")).read()
+    for needle in ("desktop/xor_shell", "/usr/local/bin/xor-shell",
+                   "/usr/local/bin/xor-control-center", "xor-shell-autostart",
+                   "desktop/theme/wallpapers/", "xor-logo.svg",
+                   "xor_shell --status-json", "xor_shell.control_center --text"):
+        assert needle in hook, f"install hook lacks {needle}"
+    return "config, hook, package list + Aurora install wiring present"
 
 
 def t_shell():
@@ -130,6 +149,7 @@ def t_shell():
         "os/live-build/config/hooks/normal/0900-xor-install.hook.chroot",
         "desktop/scripts/xor-broker-autostart.sh",
         "desktop/scripts/xor-broker-demo-run.sh",
+        "desktop/scripts/xor-shell-autostart.sh",
     ]
     for rel in scripts:
         out = subprocess.run(["sh", "-n", os.path.join(REPO, rel)],
@@ -157,6 +177,56 @@ def t_wallpaper():
     return "1920x1080 PNG"
 
 
+def t_aurora_assets():
+    css_path = os.path.join(REPO, "desktop/xor_shell/assets/style.css")
+    css = open(css_path, encoding="utf-8").read()
+    assert css.count("{") == css.count("}"), "unbalanced CSS braces"
+    for needle in (".shell-panel", ".floating-dock", ".launcher-card",
+                   ".app-card", ".control-window", "@xor_primary",
+                   "@xor_secondary", "button:focus"):
+        assert needle in css, f"style.css lacks {needle}"
+
+    logo = os.path.join(REPO, "desktop/theme/xor-logo.svg")
+    root = ET.parse(logo).getroot()
+    assert root.tag.endswith("svg"), "logo root is not SVG"
+
+    aurora = os.path.join(REPO, "desktop/theme/wallpapers/xor-royal-aurora.jpg")
+    with open(aurora, "rb") as fh:
+        magic = fh.read(3)
+    assert magic == b"\xff\xd8\xff", "Aurora wallpaper is not JPEG"
+    assert os.path.getsize(aurora) > 50_000, "Aurora wallpaper suspiciously small"
+
+    xfce = open(os.path.join(
+        REPO, "desktop/theme/xfce4/xfconf/xfce-perchannel-xml/xfce4-desktop.xml"),
+        encoding="utf-8").read()
+    assert "/usr/share/xor/wallpapers/xor-royal-aurora.jpg" in xfce
+    return "CSS, SVG logo, JPEG wallpaper and XFCE default agree"
+
+
+def t_xor_shell_cli():
+    env = dict(os.environ)
+    env["PYTHONPATH"] = os.pathsep.join([
+        os.path.join(REPO, "desktop"),
+        os.path.join(REPO, "broker", "src"),
+        env.get("PYTHONPATH", ""),
+    ])
+    status = subprocess.run(
+        [sys.executable, "-m", "xor_shell", "--status-json"],
+        capture_output=True, text=True, env=env)
+    assert status.returncode == 0, status.stderr
+    payload = json.loads(status.stdout)
+    assert payload["shell_version"] == "0.2.0"
+    assert payload["config"]["wallpaper"] == "xor-royal-aurora.jpg"
+
+    control = subprocess.run(
+        [sys.executable, "-m", "xor_shell.control_center", "--text"],
+        capture_output=True, text=True, env=env)
+    assert control.returncode == 0, control.stderr
+    assert "XOR Control Centre" in control.stdout
+    assert " GiB memory" in control.stdout
+    return "headless shell + control-centre status commands run"
+
+
 def main():
     check("python sources compile", t_compile)
     check("pyflakes", t_pyflakes)
@@ -167,6 +237,8 @@ def main():
     check("live-build tree complete", t_livebuild_tree)
     check("shell scripts", t_shell)
     check("wallpaper PNG", t_wallpaper)
+    check("Aurora shell assets", t_aurora_assets)
+    check("XOR Shell headless CLI", t_xor_shell_cli)
 
     ok_all = True
     for ok, name, detail in results:

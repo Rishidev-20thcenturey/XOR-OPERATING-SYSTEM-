@@ -39,6 +39,9 @@ qemu-guest-agent
 python3
 python3-gi
 gir1.2-gtk-3.0
+gir1.2-wnck-3.0
+pavucontrol
+procps
 
 # --- Everyday tools (reuse, don't reinvent) ---
 firefox-esr

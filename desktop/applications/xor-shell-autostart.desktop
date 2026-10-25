@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=XOR Shell
+Comment=Aurora panel, dock and launcher for the XOR desktop session
+Exec=xor-shell-autostart
+Icon=xor-logo
+Terminal=false
+NoDisplay=true
+X-GNOME-Autostart-enabled=true
+OnlyShowIn=XFCE;
