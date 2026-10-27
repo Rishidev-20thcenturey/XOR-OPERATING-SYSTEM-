@@ -160,6 +160,23 @@ COMMANDS: tuple[tuple[str, str], ...] = (
         "xfdesktop --reload 2>&1 || true; sleep 3",
     ),
     (
+        "wallpaper-after",
+        "runuser -u user -- env DISPLAY=:0 XDG_RUNTIME_DIR=/run/user/1000 "
+        "xfconf-query -c xfce4-desktop -l -v 2>&1 || true; "
+        "runuser -u user -- env DISPLAY=:0 XDG_RUNTIME_DIR=/run/user/1000 "
+        "xwininfo -root -tree 2>&1 | grep -Ei 'desktop|xfdesktop' | head -20 || true",
+    ),
+    (
+        "xfdesktop-restart",
+        "runuser -u user -- env DISPLAY=:0 XDG_RUNTIME_DIR=/run/user/1000 "
+        "xfdesktop --quit 2>&1 || true; sleep 1; "
+        "runuser -u user -- env DISPLAY=:0 XDG_RUNTIME_DIR=/run/user/1000 "
+        "sh -c 'nohup xfdesktop >/tmp/xfdesktop-restart.log 2>&1 &' "
+        "2>&1 || true; sleep 4; "
+        "ps -ef | grep '[x]fdesktop' || true; "
+        "cat /tmp/xfdesktop-restart.log 2>&1 || true",
+    ),
+    (
         "session-env",
         "pid=$(pgrep -u user -n xfce4-session); "
         "test -n \"$pid\" && tr '\\0' '\\n' < /proc/$pid/environ | "
