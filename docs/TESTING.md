@@ -35,9 +35,9 @@ python3 tools/check-packages.py
 
 This catches nonexistent/case-wrong names and missing dependency names
 before a long image build. It is a name-level closure check; apt/lb
-remains authoritative for versions, conflicts and architecture. The ISO
-build and QEMU boot still require a real Debian machine and are **not
-claimed** until that build succeeds.
+remains authoritative for versions, conflicts and architecture. The
+GitHub Actions ISO build has run successfully and checksum-verified the
+result, while the QEMU boot remains a bounded, inconclusive cloud check.
 
 ## The 200-scenario corpus
 
@@ -83,9 +83,9 @@ expectation is corrected with a written justification.
   Ctrl+1–4 activity filters) is a Milestone-2 checklist item —
   `xor-activity --text`, `xor-shell --status-json` and
   `xor-control-center --text` *are* exercised.
-* ISO boot in QEMU (no QEMU/live-build in the dev sandbox):
-  run `sudo tools/build-iso.sh && tools/run-qemu.sh` on a team machine
-  and record the result in `TEST_RESULTS.md`.
+* ISO boot in QEMU: the first cloud build/boot attempt returned
+  `INCONCLUSIVE`; keep the bounded serial/TCG smoke test and record a
+  future pass in `docs/TEST_RESULTS.md`.
 * Fuzzing the manifest/wire parsers, sustained concurrency/load (the
   audit log and `max_uses` have two-writer/concurrent-process tests, but
   the daemon remains single-threaded and has no rate limiting), and

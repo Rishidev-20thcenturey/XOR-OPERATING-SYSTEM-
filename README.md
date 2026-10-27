@@ -44,8 +44,10 @@ then put our originality where it matters:
 > directory, a shell or the network.
 
 This repository contains a **tested broker and OS foundation plus the
-Aurora Shell preview**. The ISO is configured and scripted but has not
-yet been boot-verified in the restricted cloud sandbox; that honesty is
+Aurora Shell preview**. The ISO now builds successfully in GitHub
+Actions (`.github/workflows/iso-build.yml`), but the bounded QEMU/TCG
+boot check returned **INCONCLUSIVE** there; the workflow therefore failed
+its final gate. No bootloader/GUI boot was claimed. That honesty is
 recorded in [`docs/TEST_RESULTS.md`](docs/TEST_RESULTS.md).
 
 ## 🌌 Aurora — the XOR desktop
@@ -133,8 +135,9 @@ remaining limits and test evidence.
 **Limits unchanged:** execution and audit append are not crash-atomic;
 pinned-write rollback protects against reported errors, not a crash in the
 middle of an in-place update. An append failure is reported but cannot undo
-an action. The broker is not system-wide confinement, and ISO build/QEMU
-boot verification remains outstanding (NOT RUN in `docs/TEST_RESULTS.md`).
+an action. The broker is not system-wide confinement, and the ISO build/QEMU
+boot verification was not accepted in the 2026-10-27 cloud run
+(`INCONCLUSIVE`, final gate failed).
 
 The boundary mediates requests **through the broker API**. It is not
 yet system-wide syscall confinement. The complete honest model is in
@@ -183,7 +186,11 @@ PYTHONPATH=desktop:broker/src python3 -m xor_shell.control_center --text
 
 ## 💿 Build and boot the OS image
 
-On a Debian/Ubuntu development machine with Debian mirror access:
+The dedicated GitHub Actions workflow
+[`.github/workflows/iso-build.yml`](.github/workflows/iso-build.yml) runs
+this build on `ubuntu-latest` for the ISO-hardening review branch and
+uploads the build/QEMU evidence. On a Debian/Ubuntu development machine
+with Debian mirror access:
 
 ```sh
 sudo apt install live-build qemu-system-x86 ovmf
@@ -231,16 +238,18 @@ Latest verified results (2026-10-27, Termux/Android, Python 3.13.13):
   desktop entries, shell scripts and live-build wiring. ShellCheck
   0.11.0 is clean; pyflakes was not installed and is reported as
   skipped (no pyflakes-clean claim).
-* **NOT RUN:** actual ISO build, QEMU boot and GTK behaviour
-  (`lb`/QEMU/KVM/display unavailable). Commands and exact blockers are
-  in [`docs/TEST_RESULTS.md`](docs/TEST_RESULTS.md).
+* **ISO build passed** in GitHub Actions run 40542700041; the ISO was
+  checksummed and the build artifacts were uploaded. **The QEMU boot
+  check was `INCONCLUSIVE`** and the final workflow gate failed. **GTK
+  behaviour was NOT RUN.** The detailed rows are in
+  [`docs/TEST_RESULTS.md`](docs/TEST_RESULTS.md).
 
 ## 🗺️ Road to the complete XOR OS
 
 | Phase | Status | Destination |
 |---|---|---|
 | Foundation + broker | ✅ Test-proven | Default-deny, auditable core |
-| ISO proof | 🔜 Next gate | Build and boot evidence in QEMU |
+| ISO proof | 🧪 Build PASS; QEMU inconclusive | Retry the bounded QEMU live-session signal, then boot evidence |
 | Aurora Shell | 🧪 Preview implemented | Daily-use panel, dock, launcher, controls |
 | Product system | 📝 Planned | Installer, first-run, grants UI, curated apps |
 | A/B updates | 📝 Designed | Signed, verified, rollback-tested updates |

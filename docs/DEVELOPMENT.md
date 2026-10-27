@@ -75,6 +75,21 @@ Debugging a failed boot: `--headless`, edit the boot line to add
 `console=ttyS0`, read `xor-serial.log`; or QEMU monitor with
 Ctrl+Alt+2. KVM missing ⇒ TCG emulation (works, slow).
 
+### CI ISO build and bounded QEMU smoke test
+
+The dedicated workflow `.github/workflows/iso-build.yml` builds on
+`ubuntu-latest` inside a disposable `debian:trixie` container and runs a
+bounded QEMU/TCG direct-kernel boot check. It uploads build evidence, the
+ISO, QEMU logs and a screenshot attempt, then fails unless the build
+succeeded and QEMU returned `PASS`.
+
+The first cloud run (2026-10-27, workflow run 40542700041, commit
+`d30c7a6045ef00437dbbef4fbad6145f6ad5bb0a`) built the ISO successfully
+and checksum-verified it, but the QEMU stage returned `INCONCLUSIVE`;
+the final workflow gate failed as designed. Keep the
+`docs/TEST_RESULTS.md` QEMU caveat in force until a reliable live-session
+signal is obtained.
+
 ## Where new work belongs
 
 | Change | Place |

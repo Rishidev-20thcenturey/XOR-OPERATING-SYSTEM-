@@ -26,9 +26,10 @@ artifacts are not deleted; only `--clean` removes prior build outputs.
 | `config/includes.chroot/opt/xor-dist/` | **Staged at build time** by `tools/build-iso.sh` from `broker/`, `desktop/`, `assistant/` (git-ignored; do not edit by hand) |
 | `config/hooks/normal/0900-xor-install.hook.chroot` | Installs XOR broker/shell/control commands, menu entries, broker + Aurora autostart, wallpaper set/logo and XFCE skel defaults; self-checks imports and headless shell status paths |
 
-Status: **not yet built in the cloud dev sandbox** (no live-build or root
-Debian host; package indices were reachable only for the separate name
-check). See `docs/TEST_RESULTS.md` for what is verified and
-`docs/DEVELOPMENT.md` for exact local build steps and troubleshooting.
-Nothing in this directory is claimed boot-verified until a team machine
-produces and boots an ISO.
+Status: the ISO build has now run successfully in GitHub Actions run
+40542700041 (commit `d30c7a6045ef00437dbbef4fbad6145f6ad5bb0a`) using
+Debian Live Build `20250505+deb13u1`; the ISO was checksummed and
+artifact-backed. The subsequent bounded QEMU/TCG boot check returned
+`INCONCLUSIVE`, so no boot claim is made here. See
+`docs/TEST_RESULTS.md` for the exact build, artifact and QEMU evidence,
+and `docs/DEVELOPMENT.md` for exact local build steps and troubleshooting.

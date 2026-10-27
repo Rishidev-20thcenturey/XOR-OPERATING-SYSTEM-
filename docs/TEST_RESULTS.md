@@ -1,4 +1,4 @@
-# Test results — actual, from available sandboxes (2026-10-25; hardening passes 2026-10-27)
+# Test results — actual, from available sandboxes and GitHub Actions (2026-10-25 to 2026-10-27)
 
 Original baseline environment: Debian 12 sandbox, Python 3.11.2,
 2 vCPU / 3.8 GiB, **no QEMU, no /dev/kvm, no live-build, no Debian
@@ -11,7 +11,8 @@ were reachable for the name/dependency preflight; an actual Debian
 `lb build` still could not run (no live-build/root Debian host).
 Everything verifiable in each environment was run; what could not run is
 listed as NOT RUN with the exact blocker. Reproduce locally with
-`tools/test.sh`.
+`tools/test.sh`. The latest ISO-build/QEMU evidence is from GitHub
+Actions run 40542700041, described in the ISO-build/QEMU section below.
 
 ## Unit tests — PASS (94 tests)
 
@@ -191,7 +192,7 @@ in the final Termux run, so `tools/validate.py` reported it as
 runs and GitHub Actions PR #2 (Python 3.11, Python 3.12 and ShellCheck
 jobs) were green historically, but were not re-run here.
 
-## Debian package list and build-script checks — PASS (no ISO build)
+## Debian package list and build-script checks — PASS (no local ISO build)
 
 `python3 tools/check-packages.py` fetched the configured trixie,
 trixie-updates and trixie-security indices for `main`, `contrib` and
@@ -213,9 +214,57 @@ a successful build selects the fresh ISO, not a future-dated stale ISO;
 and success-with-no-new-ISO exits failure. The stale ISO is preserved in
 all cases; nothing is silently deleted.
 
-An actual `lb build` was **not** run, so no ISO-build or boot claim is
-made. The fake-lb test proves script control flow only, not that Debian
-live-build succeeds.
+An actual `lb build` was **not** run in the Termux sandbox, so the fake-lb
+claim is limited to script control flow. The GitHub Actions ISO build in run
+40542700041 did run the real Debian Live Build and succeeded.
+
+## GitHub Actions ISO build and QEMU smoke test — 2026-10-27 (run 40542700041)
+
+Commit under test: `d30c7a6045ef00437dbbef4fbad6145f6ad5bb0a` on
+`review/ac48e68-hardening`.
+
+Workflow: `.github/workflows/iso-build.yml`, job
+`Build ISO and attempt QEMU boot`, run
+[40542700041](https://github.com/Rishidev-20thcenturey/XOR-OPERATING-SYSTEM-/actions/runs/40542700041).
+
+The job ran on `ubuntu-latest` and completed with conclusion `failure`.
+The ISO build itself succeeded; the final gate failed because the QEMU
+boot check returned **`INCONCLUSIVE`**, not `PASS`.
+
+Runner disk state: 86 GiB available before the job. The workflow’s 20 GiB
+reclaim threshold was not reached, so no preinstalled toolchain was
+removed.
+
+Build stage:
+* Started `2026-10-27T16:37:58Z`, completed `2026-10-27T16:47:01Z`
+  (about 9m03).
+* Debian Live Build `20250505+deb13u1` built
+  `live-image-amd64.hybrid.iso`.
+* ISO size: 1,464,860,672 bytes (1.364 GiB).
+* ISO SHA-256: `34a44ba9fbc7bb692f6ea998740639f7651463b1327ba36cd8726ce20f837a83`.
+* Build checksum verification: `live-image-amd64.hybrid.iso: OK`.
+* Build log, checksum and `BUILD-MANIFEST.txt` were uploaded as artifact
+  `xor-build-evidence-40542700041`.
+
+QEMU stage:
+* Started `2026-10-27T16:47:07Z`, completed `2026-10-27T17:17:15Z`
+  (about 30m08). The signal wait is a bounded 30-minute loop.
+* Final workflow result: `INCONCLUSIVE`; the final gate failed with
+  “`QEMU result was 'INCONCLUSIVE', not PASS`”.
+* The checked signal set included
+  `Reached target Graphical Interface`, `Started LightDM` and
+  `Started lightdm.service`. No accepted reliable boot-to-live-session
+  signal was produced within the bounded wait.
+* QEMU/TCG and evidence-handling tools: QEMU 8.2.2, xorriso 1.5.6.
+* The final QEMU result was not accepted, so no GUI/screenshot claim was
+  made and the final gate failed rather than passing an inconclusive
+  check.
+
+Artifacts from the failed-but-evidence-collecting run:
+* `xor-build-evidence-40542700041` (248,303 bytes)
+* `xor-iso-image-40542700041` (1,455,997,053 bytes; actual ISO was
+  1,464,860,672 bytes)
+* `xor-qemu-evidence-40542700041` (1,602,011,892 bytes)
 
 ## Demo executions — PASS
 
@@ -233,13 +282,12 @@ live-build succeeds.
 
 | Item | Blocker (verbatim) | Run instead |
 |---|---|---|
-| ISO build | `ERROR: Debian Live Build ('lb') not found.` (no live-build/root Debian host; package indices *were* reachable for the separate name check) | On a Debian/Ubuntu machine: `sudo apt install live-build && sudo tools/build-iso.sh` |
-| QEMU boot | `ERROR: qemu-system-x86_64 not found.` (also no /dev/kvm) | `sudo apt install qemu-system-x86 ovmf && tools/run-qemu.sh` |
-| GTK UI behaviour | no display / no PyGObject | After first ISO boot: verify Aurora panel/dock/launcher/Command Centre/Control Centre, Wnck window buttons and workspaces; run `xor-demo-writer`, verify Deny-focused dialog, Esc denies, 120 s timeout; open XOR Activity, check Ctrl+1–4 / Ctrl+F / Esc. Code is compile-checked; non-GTK cores and text/status modes are tested. |
+| ISO build | Now run successfully in GitHub Actions run 40542700041; see the new ISO-build/QEMU section above for build, checksum and artifact evidence. | Local `sudo tools/build-iso.sh` remains available for a team-machine rebuild. |
+| QEMU boot | No reliable boot-to-live-session signal was accepted in GitHub Actions run 40542700041; result `INCONCLUSIVE`, final gate failed. | Keep the bounded serial/TCG smoke test, inspect the captured QEMU evidence, and retry the live-session gate. |
+| GTK UI behaviour | No display / no PyGObject | After first ISO boot: verify Aurora panel/dock/launcher/Command Centre/Control Centre, Wnck window buttons and workspaces; run `xor-demo-writer`, verify Deny-focused dialog, Esc denies, 120 s timeout; open XOR Activity, check Ctrl+1–4 / Ctrl+F / Esc. Code is compile-checked; non-GTK cores and text/status modes are tested. |
 
-Consequence, stated plainly: **Milestone 0's "bootable image" is
-configured and scripted but not yet boot-verified, and Aurora is a
-tested-core preview rather than a daily-used shell.** Milestone 1
-(broker) acceptance is fully demonstrated. First team-machine task:
-build, boot, exercise Aurora + GTK confirmation, and replace this
-section's NOT RUN rows with evidence.
+Consequence, stated plainly: the ISO now builds and is checksummed and
+artifact-backed, but the **QEMU boot-to-live-session gate was not passed**
+in the 2026-10-27 cloud run; Aurora remains a tested-core preview rather
+than a daily-used shell. The first team-machine task is to retry the QEMU
+live-session signal and then exercise Aurora + GTK confirmation.
