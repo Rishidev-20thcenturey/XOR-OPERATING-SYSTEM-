@@ -14,6 +14,7 @@ Run: tools/validate.sh  (or python3 tools/validate.py)
 import json
 import os
 import py_compile
+import re
 import shutil
 import struct
 import subprocess
@@ -224,6 +225,15 @@ def t_aurora_assets():
                    ".app-card", ".control-window", "@xor_primary",
                    "@xor_secondary", "button:focus"):
         assert needle in css, f"style.css lacks {needle}"
+
+    # GTK 3 CSS only accepts numeric font-weight values in hundreds.  A
+    # non-hundred value raises a GLib.CssProvider error at runtime and stops
+    # the entire shell before its first window is created.
+    for match in re.finditer(r"font-weight\s*:\s*(\d+)", css):
+        weight = int(match.group(1))
+        line = css.count("\n", 0, match.start()) + 1
+        assert 100 <= weight <= 900 and weight % 100 == 0, (
+            f"style.css line {line}: GTK-invalid font-weight {weight}")
 
     logo = os.path.join(REPO, "desktop/theme/xor-logo.svg")
     root = ET.parse(logo).getroot()

@@ -270,7 +270,7 @@ jobs:
             -m 4096 -smp 2 \
             -kernel "$KERNEL" \
             -initrd "$INITRD" \
-            -append "boot=live components hostname=XOR username=user console=ttyS0,115200 systemd.show_status=1 loglevel=6" \
+            -append "boot=live components hostname=XOR username=user console=ttyS0,115200 systemd.show_status=1 loglevel=6 systemd.journald.forward_to_console=1" \
             -drive file="$ISO",media=cdrom,readonly=on,if=none,id=cdrom0 \
             -device ide-cd,drive=cdrom0 \
             -vga none \
@@ -321,10 +321,12 @@ jobs:
             SIGNAL="No reliable boot-to-live-session signal within the timeout"
           fi
 
-          # Give the desktop a moment after the graphical target, then ask the
-          # HMP monitor for a fresh framebuffer dump.
+          # Give Xorg, LightDM and the XFCE session time to paint the desktop
+          # before asking the HMP monitor for a fresh framebuffer dump.  The
+          # serial stop at the login prompt is why a shorter wait produced a
+          # blank/"display output is not active" screenshot in the first run.
           if [ "$GRAPHICAL" = 1 ]; then
-            sleep 20
+            sleep 60
           fi
           if [ -S "$MONITOR" ]; then
             if timeout 15 sh -c "printf 'screendump %s\\n' '$PPM' | socat - UNIX-CONNECT:'$MONITOR'" \
@@ -350,8 +352,8 @@ jobs:
             sleep 5
             kill "$QEMU_PID" 2>/dev/null || true
           fi
-          wait "$QEMU_PID" 2>/dev/null || true
-
+          wait "$QEMU_PID" 2>/dev/null
+          QEMU_RC=$?
           finish
 
       - name: Upload build logs, manifest and checksum

@@ -35,12 +35,28 @@ def apply_xfce_wallpaper(wallpaper_path: Path) -> bool:
     if not shutil.which("xfconf-query") or not wallpaper_path.is_file():
         return False
     ok = True
-    for workspace in ("workspace0", "workspace1"):
-        prop = f"/backdrop/screen0/monitor0/{workspace}/last-image"
+    # XFCE 4.20 uses the single-image properties for the current monitor and
+    # the workspace properties for per-workspace backdrops.  Set both so a
+    # wallpaper chosen here is visible immediately and after re-login.
+    props = (
+        "/backdrop/screen0/monitor0/last-image",
+        "/backdrop/screen0/monitor0/last-single-image",
+        "/backdrop/screen0/monitor0/workspace0/last-image",
+        "/backdrop/screen0/monitor0/workspace1/last-image",
+    )
+    for prop in props:
         result = subprocess.run(
             ["xfconf-query", "-c", "xfce4-desktop", "-p", prop,
              "-s", str(wallpaper_path), "--create", "-t", "string"],
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+        if result.returncode != 0:
+            # --create is rejected for an existing property; a plain set is
+            # the normal path for the user's already-populated channel.
+            result = subprocess.run(
+                ["xfconf-query", "-c", "xfce4-desktop", "-p", prop,
+                 "-s", str(wallpaper_path)],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                check=False)
         ok = ok and result.returncode == 0
     return ok
 
