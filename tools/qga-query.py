@@ -1,0 +1,240 @@
+#!/usr/bin/env python3
+"""Collect diagnostic files from a QEMU guest agent.
+
+This is a manual debugging helper for the ISO smoke-test workflow.  It is not
+used by the production image, the normal test suite, or the release gate.
+
+Usage:
+    python3 tools/qga-query.py /path/to/qga.sock output-directory
+"""
+
+from __future__ import annotations
+
+import argparse
+import base64
+import json
+import socket
+import sys
+import time
+from pathlib import Path
+from typing import Any
+
+
+COMMANDS: tuple[tuple[str, str], ...] = (
+    (
+        "lightdm-status",
+        "systemctl --no-pager --full status lightdm.service 2>&1 || true",
+    ),
+    (
+        "display-manager-status",
+        "systemctl --no-pager --full status display-manager.service 2>&1 || true",
+    ),
+    (
+        "lightdm-journal",
+        "journalctl -b --no-pager -u lightdm.service "
+        "-u display-manager.service -n 400 2>&1 || true",
+    ),
+    (
+        "warnings",
+        "journalctl -b --no-pager -p warning -n 400 2>&1 || true",
+    ),
+    (
+        "lightdm-log",
+        "cat /var/log/lightdm/lightdm.log 2>&1 || true",
+    ),
+    (
+        "xorg-log",
+        "cat /var/log/lightdm/x-0.log /var/log/Xorg.0.log 2>&1 || true",
+    ),
+    (
+        "jobs",
+        "systemctl --no-pager --full list-jobs 2>&1 || true",
+    ),
+    (
+        "graphics",
+        "ls -l /dev/dri /dev/fb0 2>&1 || true; "
+        "cat /sys/class/graphics/fb0/name 2>&1 || true; "
+        "dmesg | grep -i -E 'drm|fb0|virtio|vga' | tail -n 80 2>&1 || true",
+    ),
+    (
+        "sessions",
+        "loginctl --no-pager list-sessions 2>&1 || true; "
+        "systemctl is-active graphical.target lightdm.service 2>&1 || true; "
+        "systemctl get-default 2>&1 || true",
+    ),
+    (
+        "processes",
+        "ps -ef 2>&1 || true",
+    ),
+)
+
+
+class AgentError(RuntimeError):
+    """The guest agent did not answer as expected."""
+
+
+def connect_socket(path: str, timeout: float) -> socket.socket:
+    deadline = time.monotonic() + timeout
+    last_error: OSError | None = None
+    while time.monotonic() < deadline:
+        sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        sock.settimeout(5.0)
+        try:
+            sock.connect(path)
+            return sock
+        except OSError as exc:
+            last_error = exc
+            sock.close()
+            time.sleep(1.0)
+    raise AgentError(f"could not connect to {path}: {last_error}")
+
+
+def read_response(sock: socket.socket, timeout: float) -> dict[str, Any]:
+    deadline = time.monotonic() + timeout
+    data = bytearray()
+    while b"\n" not in data:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise AgentError("timed out waiting for guest agent response")
+        sock.settimeout(remaining)
+        try:
+            chunk = sock.recv(65536)
+        except socket.timeout as exc:
+            raise AgentError("timed out waiting for guest agent response") from exc
+        if not chunk:
+            raise AgentError("guest agent closed the connection")
+        data.extend(chunk)
+    line, _, _ = bytes(data).partition(b"\n")
+    try:
+        response = json.loads(line)
+    except json.JSONDecodeError as exc:
+        raise AgentError(f"invalid guest agent response: {line[:200]!r}") from exc
+    if not isinstance(response, dict):
+        raise AgentError(f"unexpected guest agent response: {response!r}")
+    return response
+
+
+def request(
+    sock: socket.socket, payload: dict[str, Any], timeout: float
+) -> dict[str, Any]:
+    sock.sendall((json.dumps(payload, separators=(",", ":")) + "\n").encode())
+    response = read_response(sock, timeout)
+    if "error" in response:
+        raise AgentError(f"guest agent error: {response['error']!r}")
+    return response
+
+
+def sync(sock: socket.socket, timeout: float) -> None:
+    deadline = time.monotonic() + timeout
+    sync_id = 0
+    while time.monotonic() < deadline:
+        sync_id += 1
+        try:
+            response = request(
+                sock,
+                {"execute": "guest-sync", "arguments": {"id": sync_id}},
+                timeout=5.0,
+            )
+        except AgentError:
+            time.sleep(1.0)
+            continue
+        if response.get("return") == sync_id:
+            return
+        raise AgentError(f"guest-sync returned {response!r}")
+    raise AgentError("guest agent did not answer guest-sync")
+
+
+def run_command(sock: socket.socket, command: str) -> tuple[str, str, int]:
+    started = request(
+        sock,
+        {
+            "execute": "guest-exec",
+            "arguments": {
+                "path": "/bin/sh",
+                "arg": ["-c", command],
+                "capture-output": True,
+            },
+        },
+        timeout=10.0,
+    )
+    pid = started.get("return", {}).get("pid")
+    if not isinstance(pid, int):
+        raise AgentError(f"guest-exec returned no pid: {started!r}")
+
+    deadline = time.monotonic() + 30.0
+    while time.monotonic() < deadline:
+        status = request(
+            sock,
+            {"execute": "guest-exec-status", "arguments": {"pid": pid}},
+            timeout=10.0,
+        ).get("return", {})
+        if status.get("exited"):
+            break
+        time.sleep(0.25)
+    else:
+        raise AgentError(f"command did not finish: {command}")
+
+    def decode(key: str) -> str:
+        raw = status.get(key, "")
+        if not isinstance(raw, str) or not raw:
+            return ""
+        return base64.b64decode(raw).decode("utf-8", "replace")
+
+    exitcode = status.get("exitcode", -1)
+    if not isinstance(exitcode, int):
+        exitcode = -1
+    return decode("out-data"), decode("err-data"), exitcode
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("socket", help="QEMU guest agent Unix socket")
+    parser.add_argument("output", help="directory for diagnostic text files")
+    parser.add_argument(
+        "--connect-timeout",
+        type=float,
+        default=120.0,
+        help="seconds to wait for the agent socket (default: 120)",
+    )
+    args = parser.parse_args()
+
+    output = Path(args.output)
+    output.mkdir(parents=True, exist_ok=True)
+    summary: list[str] = []
+
+    try:
+        sock = connect_socket(args.socket, args.connect_timeout)
+        try:
+            sync(sock, args.connect_timeout)
+            for name, command in COMMANDS:
+                try:
+                    stdout, stderr, exitcode = run_command(sock, command)
+                except AgentError as exc:
+                    text = f"command failed: {exc}\n"
+                    (output / f"{name}.txt").write_text(text, encoding="utf-8")
+                    summary.append(f"{name}: ERROR: {exc}")
+                    continue
+                text = (
+                    f"$ {command}\n"
+                    f"exitcode={exitcode}\n"
+                    f"--- stdout ---\n{stdout}"
+                    f"--- stderr ---\n{stderr}"
+                )
+                (output / f"{name}.txt").write_text(text, encoding="utf-8")
+                summary.append(f"{name}: exit={exitcode} bytes={len(text)}")
+        finally:
+            sock.close()
+    except (AgentError, OSError) as exc:
+        (output / "qga-error.txt").write_text(f"{exc}\n", encoding="utf-8")
+        print(f"qga-query: {exc}", file=sys.stderr)
+        return 1
+
+    (output / "qga-summary.txt").write_text(
+        "\n".join(summary) + "\n", encoding="utf-8"
+    )
+    print("\n".join(summary))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
