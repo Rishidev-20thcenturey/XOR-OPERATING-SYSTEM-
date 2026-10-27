@@ -78,6 +78,7 @@ class ReasonCode(str, enum.Enum):
     DIGEST_MISMATCH = "digest_mismatch"
     PATH_ESCAPE = "path_escape"
     EXECUTION_ERROR = "execution_error"
+    AUDIT_FAILURE = "audit_failure"
 
 
 def utcnow() -> datetime:

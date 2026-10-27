@@ -121,7 +121,7 @@ traversal denied; a write pause for approval; a network send refused;
 and the tamper-evident audit trail tying it together.
 
 ```sh
-tools/test.sh       # 62 tests + 200-scenario security corpus
+tools/test.sh       # 75 tests + 200-scenario security corpus
 tools/validate.sh   # code, assets, docs inputs and live-build wiring
 ```
 

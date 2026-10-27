@@ -1,4 +1,5 @@
 """End-to-end broker tests: confirmation binding, audit, manifests, IPC."""
+import hashlib
 import io
 import json
 import multiprocessing
@@ -26,7 +27,7 @@ from xor_broker.confirm import (  # noqa: E402
     ScriptedConfirmation,
 )
 from xor_broker.manifest import (  # noqa: E402
-    ManifestError, grant_for_selected_file, parse_manifest,
+    ManifestError, grant_for_selected_file, load_manifest, parse_manifest,
 )
 from xor_broker.models import (  # noqa: E402
     ActionRequest, Operation, OutcomeStatus, utcnow,
@@ -195,6 +196,30 @@ class TestSelectedDirectoryGrant(BrokerCase):
         self.assertEqual(out.status, OutcomeStatus.EXECUTED)
         self.assertEqual(out.listing, ["a.txt", "b.txt"])
 
+    def test_replaced_selected_directory_is_rejected(self):
+        selected = os.path.join(self.root, "selected")
+        original = os.path.join(self.root, "selected-original")
+        os.makedirs(selected)
+        with open(os.path.join(selected, "approved.txt"), "w") as fh:
+            fh.write("approved")
+        cap = grant_for_selected_file(
+            "tool-a", Operation.LIST_DIR, selected, "selected-dir")
+        broker = Broker(
+            PolicyEngine([cap]),
+            ConfirmationManager(AutoDenyConfirmation()),
+            AuditLog(os.path.join(self.root, "audit.jsonl")),
+        )
+
+        os.rename(selected, original)
+        os.makedirs(selected)
+        with open(os.path.join(selected, "attacker.txt"), "w") as fh:
+            fh.write("replacement")
+
+        out = broker.handle(ActionRequest("tool-a", Operation.LIST_DIR, selected))
+        self.assertEqual(out.status, OutcomeStatus.DENIED_POLICY)
+        self.assertEqual(out.reason.value, "path_escape")
+        self.assertIsNone(out.listing)
+
 
 class TestAudit(BrokerCase):
     def test_every_request_audited_and_content_never_logged(self):
@@ -276,6 +301,31 @@ class TestManifestValidation(unittest.TestCase):
         }]}
         with self.assertRaises(ManifestError):
             parse_manifest(bad)
+
+    def test_load_manifest_rejects_symlink(self):
+        with tempfile.TemporaryDirectory() as root:
+            target = os.path.join(root, "real.json")
+            with open(target, "w") as fh:
+                json.dump({"capabilities": []}, fh)
+            link = os.path.join(root, "manifest.json")
+            os.symlink(target, link)
+            with self.assertRaises(ManifestError):
+                load_manifest(link)
+
+    def test_load_manifest_rejects_non_regular_file(self):
+        with tempfile.TemporaryDirectory() as root:
+            with self.assertRaises(ManifestError):
+                load_manifest(root)
+
+    def test_build_broker_rejects_symlinked_manifest(self):
+        with tempfile.TemporaryDirectory() as root:
+            target = os.path.join(root, "real.json")
+            with open(target, "w") as fh:
+                json.dump({"capabilities": []}, fh)
+            link = os.path.join(root, "manifest.json")
+            os.symlink(target, link)
+            with self.assertRaises(ManifestError):
+                build_broker(link, os.path.join(root, "audit.jsonl"))
 
     def test_rejects_duplicate_ids(self):
         entry = {"capability_id": "dup", "tool": "t", "operation": "read_file",
@@ -471,6 +521,105 @@ class TestAuditHardening(BrokerCase):
             fh.write("{not json}\n")
         with self.assertRaises(AuditIntegrityError):
             AuditLog(path)
+
+    def test_startup_refuses_symlinked_log(self):
+        target = os.path.join(self.root, "real-audit.jsonl")
+        with open(target, "w") as fh:
+            fh.write("")
+        link = os.path.join(self.root, "audit.jsonl")
+        os.symlink(target, link)
+        with self.assertRaises(AuditIntegrityError):
+            AuditLog(link)
+
+    def test_executed_counts_refuse_hash_invalid_record(self):
+        path = os.path.join(self.root, "audit.jsonl")
+        log = AuditLog(path)
+        self._append(log)
+        with open(path) as fh:
+            record = json.loads(fh.readline())
+        record["result"] = "denied_policy"
+        with open(path, "w") as fh:
+            fh.write(json.dumps(record, sort_keys=True, separators=(",", ":")) + "\n")
+        with self.assertRaises(AuditIntegrityError):
+            log.executed_counts_by_capability()
+
+    def test_executed_counts_refuse_hash_valid_but_malformed_execution(self):
+        path = os.path.join(self.root, "audit.jsonl")
+        log = AuditLog(path)
+        self._append(log)
+        with open(path) as fh:
+            record = json.loads(fh.readline())
+        record["capability_id"] = None
+        body = {k: v for k, v in record.items() if k != "hash"}
+        blob = json.dumps(body, sort_keys=True, separators=(",", ":"),
+                          ensure_ascii=False).encode("utf-8")
+        record["hash"] = hashlib.sha256(
+            record["prev_hash"].encode("ascii") + blob).hexdigest()
+        with open(path, "w") as fh:
+            fh.write(json.dumps(record, sort_keys=True, separators=(",", ":")) + "\n")
+        with self.assertRaises(AuditIntegrityError):
+            log.executed_counts_by_capability()
+
+    def test_executed_counts_refuse_malformed_record(self):
+        path = os.path.join(self.root, "audit.jsonl")
+        log = AuditLog(path)
+        self._append(log)
+        with open(path, "a") as fh:
+            fh.write("{not json}\n")
+        with self.assertRaises(AuditIntegrityError):
+            log.executed_counts_by_capability()
+
+    def test_executed_counts_refuse_replaced_log_path(self):
+        path = os.path.join(self.root, "audit.jsonl")
+        log = AuditLog(path)
+        self._append(log)
+        replacement = os.path.join(self.root, "replacement.jsonl")
+        with open(replacement, "w") as fh:
+            fh.write("")
+        os.replace(replacement, path)
+        with self.assertRaises(AuditIntegrityError):
+            log.executed_counts_by_capability()
+
+    def test_executed_counts_refuse_deleted_log(self):
+        path = os.path.join(self.root, "audit.jsonl")
+        log = AuditLog(path)
+        self._append(log)
+        os.unlink(path)
+        with self.assertRaises(AuditIntegrityError):
+            log.executed_counts_by_capability()
+
+    def test_executed_counts_refuse_in_place_tail_truncation(self):
+        path = os.path.join(self.root, "audit.jsonl")
+        log = AuditLog(path)
+        self._append(log)
+        self._append(log)
+        with open(path, "w") as fh:
+            fh.write("")
+        with self.assertRaises(AuditIntegrityError):
+            log.executed_counts_by_capability()
+
+    def test_append_refuses_replaced_log_path(self):
+        path = os.path.join(self.root, "audit.jsonl")
+        log = AuditLog(path)
+        self._append(log)
+        replacement = os.path.join(self.root, "replacement.jsonl")
+        with open(replacement, "w") as fh:
+            fh.write("")
+        os.replace(replacement, path)
+        with self.assertRaises(AuditIntegrityError):
+            self._append(log)
+
+    def test_audit_append_failure_after_execution_is_explicit(self):
+        broker, paths, audit_path = self.make(ScriptedConfirmation(default=True))
+        with patch("xor_broker.audit.os.write", side_effect=OSError("disk full")):
+            out = broker.handle(
+                ActionRequest("tool-a", Operation.READ_FILE, paths["granted.txt"]))
+        self.assertEqual(out.status, OutcomeStatus.FAILED)
+        self.assertEqual(out.reason.value, "audit_failure")
+        self.assertIsNone(out.data)
+        self.assertIn("executed", out.error)
+        self.assertIn("audit", out.error)
+        self.assertEqual(os.path.getsize(audit_path), 0)
 
     def test_init_creates_private_manifest(self):
         manifest = os.path.join(self.root, "config", "xor", "manifest.json")

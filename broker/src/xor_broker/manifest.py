@@ -126,12 +126,46 @@ def parse_manifest(data: object) -> List[Capability]:
     return capabilities
 
 
+def open_manifest_fd(path: str) -> int:
+    """Open an existing manifest without following links or blocking on FIFOs.
+
+    Manifests are trusted configuration.  Refusing symlinks and
+    non-regular files at the shared loader keeps this policy consistent
+    with ``xor-broker init`` and prevents a path swap from redirecting a
+    grant load to a special file.
+    """
+    try:
+        fd = os.open(
+            path,
+            os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC | os.O_NONBLOCK,
+        )
+    except OSError as exc:
+        raise ManifestError(f"{path}: manifest cannot be opened safely: {exc}") from exc
+    try:
+        st = os.fstat(fd)
+        if not stat.S_ISREG(st.st_mode):
+            raise ManifestError(f"{path}: manifest is not a regular file")
+    except BaseException:
+        os.close(fd)
+        raise
+    return fd
+
+
 def load_manifest(path: str) -> List[Capability]:
-    with open(path, "r", encoding="utf-8") as fh:
-        try:
-            data = json.load(fh)
-        except json.JSONDecodeError as exc:
-            raise ManifestError(f"{path}: invalid JSON: {exc}") from exc
+    fd = open_manifest_fd(path)
+    try:
+        with os.fdopen(fd, "r", encoding="utf-8") as fh:
+            try:
+                data = json.load(fh)
+            except json.JSONDecodeError as exc:
+                raise ManifestError(f"{path}: invalid JSON: {exc}") from exc
+            except (OSError, UnicodeError) as exc:
+                raise ManifestError(
+                    f"{path}: manifest cannot be read: {exc}") from exc
+    except ManifestError:
+        raise
+    except OSError as exc:
+        raise ManifestError(f"{path}: manifest cannot be read: {exc}") from exc
     return parse_manifest(data)
 
 

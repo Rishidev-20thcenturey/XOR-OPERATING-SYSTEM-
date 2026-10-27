@@ -1,30 +1,39 @@
-# Test results — actual, from available sandboxes (2026-10-25; hardening pass 2026-10-27)
+# Test results — actual, from available sandboxes (2026-10-25; hardening passes 2026-10-27)
 
 Original baseline environment: Debian 12 sandbox, Python 3.11.2,
 2 vCPU / 3.8 GiB, **no QEMU, no /dev/kvm, no live-build, no Debian
 mirror access, no GTK/PyGObject** (egress limited to github/pypi/npm).
 The 2026-10-27 hardening pass was re-run on Termux/Android with Python
 3.13.13 under the same unprivileged, headless, offline constraints,
-because the Debian sandbox was unavailable. Everything verifiable in
-each environment was run; what could not run is listed as NOT RUN with
-the exact blocker. Reproduce locally with `tools/test.sh`.
+because the Debian sandbox was unavailable. The final follow-up run in
+this document is from **2026-10-27 19:31 +0530** on that environment.
+Everything verifiable in each environment was run; what could not run is
+listed as NOT RUN with the exact blocker. Reproduce locally with
+`tools/test.sh`.
 
-## Unit tests — PASS (62 tests)
+## Unit tests — PASS (75 tests)
 
-Latest `tools/test.sh` run (unittest fallback) → **62 passed**:
-48 broker tests (including corpus-as-test), 3 assistant-gate tests and
-11 desktop tests. Covers: default-deny matrix, exact file/dir scoping,
-traversal & symlink fail-closed (incl. write-through leaving target
-untouched), selected-directory grants issuing `dir` scope and actually
-listing, rejection of file-scoped `list_dir` grants, confirmation
-digest-binding / expiry / replay rejection, deny-default CLI (blank,
-EOF, "yes" ≠ approve), provider-crash ⇒ deny, audit completeness +
-0600 + tamper detection, durable `max_uses` across a broker rebuild,
-concurrent thread/process requests and a daemon/CLI sharing one audit
-log all respecting a single-use limit, two-writer audit locking,
-fail-closed startup on a tampered/unreadable chain, private manifest
-creation, refusal to chmod a symlinked manifest target, 0600 mode on
-newly created write targets, daemon singleton locking, manifest
+Latest `tools/test.sh` run (unittest fallback) → **75 passed**:
+61 broker tests (including corpus-as-test), 3 assistant-gate tests and
+11 desktop tests. Exact durations from the final run: 61 tests in
+2.611 s, 3 tests in 0.000 s, 11 tests in 0.040 s. Covers: default-deny
+matrix, exact file/dir scoping, traversal & symlink fail-closed (incl.
+write-through leaving target untouched), selected-directory grants
+issuing `dir` scope and actually listing, replacement of a selected
+directory rejected by its inode pin, rejection of file-scoped `list_dir`
+grants, confirmation digest-binding / expiry / replay rejection,
+deny-default CLI (blank, EOF, "yes" ≠ approve), provider-crash ⇒ deny,
+audit completeness + 0600 + tamper detection, FD-anchored chain
+verification and `max_uses` counts that reject malformed/hash-invalid
+records, replaced/deleted/in-place-truncated logs, explicit
+`audit_failure` when an append fails after an action executed, durable
+`max_uses` across a broker rebuild, concurrent thread/process requests
+and a daemon/CLI sharing one audit log all respecting a single-use
+limit, two-writer audit locking, fail-closed startup on a
+tampered/unreadable/symlinked chain, private manifest creation, shared
+no-follow/regular-file manifest loading (symlink and non-regular
+rejection) plus refusal to chmod a symlinked manifest target, 0600 mode
+on newly created write targets, daemon singleton locking, manifest
 strictness (unsupported ops ungrantable), real Unix-socket round-trip,
 assistant disabled + read-only surface, activity filters/search/chain
 (and malformed-log fallback), and the Aurora shell core (desktop-entry
@@ -50,9 +59,19 @@ crashes in the shell and Activity viewer. Network/battery sysfs
 permission failures found on Termux were also converted to safe
 fallbacks.
 
+The follow-up hardening pass fixed: audit chain reads/counts now use and
+verify the same locked FD (malformed/hash-invalid records and
+replaced/deleted/in-process-truncated logs fail closed); append failures
+after execution return an explicit `audit_failure` with no result data;
+`list_dir` verifies the opened directory's inode pin; manifest loading
+shares `init`'s no-follow/regular-file policy; and the unittest harness
+no longer pipes test output through `tail` in a way that could mask a
+failure.
+
 ## Security corpus — PASS (all 10 criteria)
 
-`python3 security/run_corpus.py` (200 scenarios + 50 injection twins, 0.5 s):
+`python3 security/run_corpus.py` (200 scenarios + 50 injection twins;
+final run `OVERALL: PASS`):
 
 | # | Criterion | Result |
 |---|---|---|
@@ -78,10 +97,12 @@ CSS classes/braces, SVG logo, Royal Aurora JPEG and XFCE default agree,
 and headless XOR Shell/Control Centre commands run. The corpus's
 unsupported-operation payload marker was made path-independent so the
 content-redaction check cannot false-positive on a sandbox path
-containing the old generic string `data`. Pyflakes is **clean** in the
-pytest venv run. ShellCheck is clean locally under both 0.10 and 0.11
-after fixing SC2012/SC2015 findings, and GitHub Actions PR #2 is green
-(Python 3.11, Python 3.12 and ShellCheck jobs).
+containing the old generic string `data`. In the final Termux run,
+pyflakes and ShellCheck were **not installed**, so `tools/validate.py`
+reported both as `SKIPPED`; no clean-lint claim is made from this run.
+Earlier Debian/pytest-venv runs and GitHub Actions PR #2 (Python 3.11,
+Python 3.12 and ShellCheck jobs) were green historically, but were not
+re-run here.
 
 ## Demo executions — PASS
 

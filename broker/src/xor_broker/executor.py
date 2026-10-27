@@ -7,7 +7,8 @@ upstream checks (defence in depth):
   whose digest matches the *actual* request being executed.
 * Files are opened through ``paths.open_scoped_*`` (FD-anchored,
   ``O_NOFOLLOW``), so approval-time validation cannot be raced.
-* Inode pins from file-selection grants are checked with ``fstat``.
+* Inode pins from file/directory-selection grants are checked with
+  ``fstat`` before any content is read or listed.
 """
 
 from __future__ import annotations
@@ -72,6 +73,7 @@ def execute(request: ActionRequest, capability: Capability, canonical_path: str,
         if op is Operation.LIST_DIR:
             FD = open_scoped_dir(capability.resource, canonical_path)
             try:
+                _check_pin(FD, capability)
                 names = sorted(os.listdir(FD))
             finally:
                 os.close(FD)

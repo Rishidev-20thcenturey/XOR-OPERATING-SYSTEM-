@@ -5,7 +5,6 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import stat
 import sys
 import tempfile
 
@@ -14,7 +13,7 @@ from .audit import AuditLog, read_records, verify_chain
 from .broker import Broker
 from .confirm import CliConfirmation, ConfirmationManager
 from .config import default_audit_path, default_manifest_path, default_socket_path
-from .manifest import load_manifest
+from .manifest import ManifestError, load_manifest, open_manifest_fd
 from .models import ActionRequest, Operation
 from .policy import PolicyEngine
 
@@ -139,24 +138,16 @@ def cmd_init(args) -> int:
             pass
     if os.path.lexists(manifest_path):
         # Do not overwrite an existing manifest, but do not leave a
-        # user-controlled grant file world-readable either.  Open with
-        # O_NOFOLLOW and chmod the opened FD so a symlink can never redirect
-        # the chmod onto another file.
+        # user-controlled grant file world-readable either.  The shared
+        # loader opens with O_NOFOLLOW and requires a regular file, so a
+        # symlink can never redirect the chmod onto another file.
         try:
-            fd = os.open(
-                manifest_path,
-                os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC,
-            )
-        except OSError as exc:
+            fd = open_manifest_fd(manifest_path)
+        except ManifestError as exc:
             print(f"Refusing unsafe manifest path {manifest_path}: {exc}",
                   file=sys.stderr)
             return 2
         try:
-            st = os.fstat(fd)
-            if not stat.S_ISREG(st.st_mode):
-                print(f"Refusing manifest path that is not a regular file: "
-                      f"{manifest_path}", file=sys.stderr)
-                return 2
             try:
                 os.fchmod(fd, 0o600)
             except OSError as exc:

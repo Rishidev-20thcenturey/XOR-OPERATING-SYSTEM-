@@ -6,7 +6,9 @@ the broker allows a request only when an explicit capability in the
 manifest grants that tool that operation on that exact resource. Writes
 additionally require per-action user confirmation. Every request —
 allowed, denied or failed — is recorded in a hash-chained audit log
-that contains digests, never file contents.
+that contains digests, never file contents. If the audit append itself
+fails, the caller gets an explicit `audit_failure` result, never a
+false success.
 
 ## Quick start
 
@@ -35,12 +37,18 @@ can be **denied explicitly and audited**; manifests cannot grant them.
 - Selecting/granting one file never grants its parent directory.
   Directory listing requires an explicit `dir`-scoped grant; a
   `list_dir` grant with `file` scope is rejected at manifest load.
+  Selected-directory grants are inode-pinned, and the executor checks
+  the opened directory against that pin before listing.
 - Path traversal and symlink escapes fail closed. Enforcement is
   FD-anchored (`dir_fd` walks with `O_NOFOLLOW`), not string-prefix
-  checks, so policy/executor races cannot redirect access.
+  checks, so policy/executor races cannot redirect access. Manifest
+  loading uses the same no-follow + regular-file policy as
+  `xor-broker init`.
 - `max_uses` is durable in the audit log and enforced under a
   cross-process use lock, so concurrent daemon/CLI requests cannot
-  exceed the limit.
+  exceed the limit. Counts are rebuilt by verifying the chain from the
+  same locked file descriptor; malformed/hash-invalid records, a
+  replaced/deleted log path, and in-process tail truncation fail closed.
 - An approval for action A cannot authorise action B (digest binding),
   cannot be replayed (single use), and expires.
 - Untrusted document text (`untrusted_context`) is never read by the
@@ -53,6 +61,12 @@ intercept syscalls of arbitrary same-user processes, and tool identity
 over the Unix socket is self-declared in the baseline. Process
 isolation (bubblewrap/Flatpak portals) for the future assistant runner
 is Milestone 4. See `../docs/THREAT_MODEL.md`.
+
+Execution and audit append are not crash-atomic. A crash after the
+action but before the durable append can leave an execution uncounted
+against `max_uses`; a tail truncation made before a verifier starts is
+not detectable from the log alone. An append failure is reported as
+`audit_failure` and does not return any action result data.
 
 ## Layout
 

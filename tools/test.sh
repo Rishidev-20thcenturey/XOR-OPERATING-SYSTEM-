@@ -19,9 +19,9 @@ if $PY -c "import pytest" 2>/dev/null; then
 else
     echo "NOTE: pytest not installed; using unittest (pip install pytest for nicer output)"
     step "Unit tests (unittest)"
-    PYTHONPATH=broker/src $PY -m unittest discover -s broker/tests -v 2>&1 | tail -5
-    PYTHONPATH=broker/src:assistant/src $PY -m unittest discover -s assistant/tests -v 2>&1 | tail -5
-    PYTHONPATH=broker/src:desktop $PY -m unittest discover -s desktop/tests -v 2>&1 | tail -5
+    PYTHONPATH=broker/src $PY -m unittest discover -s broker/tests -v
+    PYTHONPATH=broker/src:assistant/src $PY -m unittest discover -s assistant/tests -v
+    PYTHONPATH=broker/src:desktop $PY -m unittest discover -s desktop/tests -v
 fi
 
 step "Security corpus (200 scenarios + 50 injection twins)"
