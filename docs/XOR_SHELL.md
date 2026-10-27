@@ -46,7 +46,7 @@ Aurora saves validated settings to `~/.config/xor/shell.json`:
 
 These settings are consumed, not just saved: dock position/size and
 panel opacity are applied on the next XOR Shell start, and reduce-motion
-disables Control Centre page fades and shell CSS transitions. Installed
+disables Control Centre page transitions and GTK animations. Installed
 wallpapers live in `/usr/share/xor/wallpapers/`; repository development
 reads `desktop/theme/wallpapers/` as a fallback.
 

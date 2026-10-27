@@ -111,7 +111,11 @@ class XorShell:
         # fake control; keep these declarations next to the base theme.
         css += "\n.shell-panel {\n  " + panel_gradient_css(self.config.panel_opacity) + "\n}\n"
         if self.config.reduce_motion:
-            css += "\n* { transition: none; }\n"
+            # GTK 3 CSS has no transition property; setting the toolkit
+            # animation preference is the supported way to honour this.
+            settings = self.Gtk.Settings.get_default()
+            if settings is not None:
+                settings.set_property("gtk-enable-animations", False)
         provider = self.Gtk.CssProvider()
         provider.load_from_data(css.encode("utf-8"))
         screen = self.Gdk.Screen.get_default()
