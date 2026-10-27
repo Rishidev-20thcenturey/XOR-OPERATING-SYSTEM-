@@ -220,6 +220,7 @@ jobs:
           SIGNAL=""
           QEMU_RC="not-started"
           SCREENSHOT="not-captured"
+          SCREENSHOT_OK=0
           rm -f "$SERIAL" "$MONITOR" "$PPM" "$PNG"
 
           finish() {
@@ -231,9 +232,11 @@ jobs:
               echo "qemu_exit=$QEMU_RC"
               echo "serial_log=$SERIAL"
               echo "screenshot=$SCREENSHOT"
+              echo "screenshot_ok=$SCREENSHOT_OK"
               echo "note=Kernel and initrd extracted from the built ISO; the ISO was attached as a CD-ROM. Firmware/bootloader selection was not exercised by this direct-kernel smoke test."
             } > "$QEMU_DIR/qemu-result.txt"
             echo "result=$RESULT" >> "$GITHUB_OUTPUT"
+            echo "screenshot_ok=$SCREENSHOT_OK" >> "$GITHUB_OUTPUT"
             exit 0
           }
 
@@ -322,23 +325,37 @@ jobs:
           fi
 
           # Give Xorg, LightDM and the XFCE session time to paint the desktop
-          # before asking the HMP monitor for a fresh framebuffer dump.  The
-          # serial stop at the login prompt is why a shorter wait produced a
-          # blank/"display output is not active" screenshot in the first run.
-          if [ "$GRAPHICAL" = 1 ]; then
-            sleep 60
-          fi
-          if [ -S "$MONITOR" ]; then
-            if timeout 15 sh -c "printf 'screendump %s\\n' '$PPM' | socat - UNIX-CONNECT:'$MONITOR'" \
+          # before asking the HMP monitor for a fresh framebuffer dump.  A
+          # fixed 60-second wait was not enough on a slower TCG boot: it
+          # produced a 282-byte black PNG even though graphical.target had
+          # been reached.  Wait longer, then retry if the image is still
+          # implausibly small.
+          capture_screenshot() {
+            [ -S "$MONITOR" ] || return 1
+            if ! timeout 15 sh -c "printf 'screendump %s\\n' '$PPM' | socat - UNIX-CONNECT:'$MONITOR'" \
                 > "$QEMU_DIR/screendump.log" 2>&1; then
-              if [ -s "$PPM" ]; then
-                SCREENSHOT="$PPM"
-                if command -v convert >/dev/null 2>&1; then
-                  convert "$PPM" "$PNG" >> "$QEMU_DIR/screendump.log" 2>&1 || true
-                  [ -s "$PNG" ] && SCREENSHOT="$PNG"
-                fi
-              fi
+              return 1
             fi
+            [ -s "$PPM" ] || return 1
+            SCREENSHOT="$PPM"
+            if command -v convert >/dev/null 2>&1; then
+              convert "$PPM" "$PNG" >> "$QEMU_DIR/screendump.log" 2>&1 || true
+              [ -s "$PNG" ] && SCREENSHOT="$PNG"
+            fi
+            return 0
+          }
+          if [ "$GRAPHICAL" = 1 ]; then
+            sleep 240
+            for attempt in 1 2 3; do
+              capture_screenshot || true
+              if [ -f "$SCREENSHOT" ] && \
+                  [ "$(stat -c%s "$SCREENSHOT" 2>/dev/null || echo 0)" -ge 10000 ]; then
+                SCREENSHOT_OK=1
+                break
+              fi
+              echo "screenshot attempt $attempt was blank or too small; retrying"
+              sleep 60
+            done
           fi
           if [ "$SCREENSHOT" != "not-captured" ] && command -v identify >/dev/null 2>&1; then
             identify "$SCREENSHOT" > "$QEMU_DIR/screenshot-info.txt" 2>&1 || true
@@ -393,9 +410,11 @@ jobs:
         env:
           BUILD_OK: ${{ steps.build.outputs.ok }}
           QEMU_RESULT: ${{ steps.qemu.outputs.result }}
+          SCREENSHOT_OK: ${{ steps.qemu.outputs.screenshot_ok }}
         run: |
           echo "build_ok=$BUILD_OK"
           echo "qemu_result=$QEMU_RESULT"
+          echo "screenshot_ok=$SCREENSHOT_OK"
           if [ "$BUILD_OK" != "true" ]; then
             echo "::error::ISO build did not succeed; see the uploaded build evidence."
             exit 1
@@ -404,4 +423,8 @@ jobs:
             echo "::error::QEMU result was '$QEMU_RESULT', not PASS. See xor-qemu-evidence."
             exit 1
           fi
-          echo "ISO build succeeded and QEMU reached the graphical target."
+          if [ "$SCREENSHOT_OK" != "1" ]; then
+            echo "::error::QEMU reached the graphical target but the screenshot was blank or too small."
+            exit 1
+          fi
+          echo "ISO build succeeded and QEMU reached the graphical target with a non-blank screenshot."

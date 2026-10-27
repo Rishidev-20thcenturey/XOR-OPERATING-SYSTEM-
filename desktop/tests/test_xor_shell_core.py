@@ -172,6 +172,8 @@ class TestWallpaperApplication(unittest.TestCase):
                 self.assertIn("/backdrop/screen0/monitor0/image-show", props)
                 self.assertIn("/backdrop/screen0/monitor0/workspace0/last-image", props)
                 self.assertIn("/backdrop/screen0/monitor0/workspace1/last-image", props)
+                commands = [call.args[0] for call in run.call_args_list]
+                self.assertIn(["xfdesktop", "--reload"], commands)
 
 
 if __name__ == "__main__":

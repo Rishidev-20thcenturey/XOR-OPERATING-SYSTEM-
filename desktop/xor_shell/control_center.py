@@ -69,6 +69,12 @@ def apply_xfce_wallpaper(wallpaper_path: Path) -> bool:
             ["xfconf-query", "-c", "xfce4-desktop", "-p", show_prop,
              "-s", "true"],
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+    # xfconf-query changes are not always enough for xfdesktop 4.20 to
+    # repaint the already-running desktop; ask it to reload its settings.
+    if shutil.which("xfdesktop"):
+        subprocess.run(
+            ["xfdesktop", "--reload"],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
     return ok and result.returncode == 0
 
 
