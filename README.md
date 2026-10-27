@@ -114,10 +114,12 @@ default-deny model:
 * Pinned write targets are opened without `O_TRUNC`; the opened inode is
   checked before any change, so replacing or deleting a selected file
   fails closed and leaves the replacement untouched.
-* Unpinned writes are staged in the target directory and renamed into
-  place; a failed write leaves the original content intact. Pinned writes
-  update the pinned inode in place with a backup/rollback copy, and
-  zero-progress `write()` results fail explicitly instead of looping.
+* Unpinned writes are staged inside a private `0700` directory anchored
+  to the target directory's file descriptor and renamed into place; a
+  failed write leaves the original content intact, and other users cannot
+  read or substitute the staged bytes. Pinned writes update the pinned
+  inode in place with a backup/rollback copy, and zero-progress `write()`
+  results fail explicitly instead of looping.
 * Manifest loading shares `xor-broker init`'s no-follow and
   regular-file policy.
 * If the audit append fails after an action, the broker returns an
@@ -155,7 +157,7 @@ traversal denied; a write pause for approval; a network send refused;
 and the tamper-evident audit trail tying it together.
 
 ```sh
-tools/test.sh       # 87 tests + 200-scenario security corpus
+tools/test.sh       # 90 tests + 200-scenario security corpus
 tools/validate.sh   # code, assets, docs inputs and live-build wiring
 ```
 
@@ -206,13 +208,14 @@ build outputs.
 
 Latest verified results (2026-10-27, Termux/Android, Python 3.13.13):
 
-* **87 unit tests passed** under unittest: 73 broker (including
+* **90 unit tests passed** under unittest: 76 broker (including
   corpus-as-test), 3 assistant-gate and 11 desktop/Activity/Aurora.
   Write regressions prove a replaced pinned file keeps its contents,
   deleted pinned targets are not recreated, failed/zero-progress writes
   preserve the original (atomic staging for unpinned writes, rollback for
-  pinned writes), temp files are cleaned up, and symlink targets fail
-  closed.
+  pinned writes), staging is private `0700` (file created `0600`) and
+  source-name substitution cannot redirect the rename, staging files are
+  cleaned up, and symlink targets fail closed.
 * **200 security scenarios + 50 injection twins passed**:
   0 out-of-grant actions executed, 0 network sends, 0 unconfirmed
   writes, 0 audit/content leaks, 45/45 legitimate approved actions.

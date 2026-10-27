@@ -6,19 +6,19 @@ mirror access, no GTK/PyGObject** (egress limited to github/pypi/npm).
 The 2026-10-27 hardening pass was re-run on Termux/Android with Python
 3.13.13 under the same unprivileged, headless constraints, because the
 Debian sandbox was unavailable. The final run in this document is from
-**2026-10-27 21:14 +0530** on that environment. Debian package indices
+**2026-10-27 21:27 +0530** on that environment. Debian package indices
 were reachable for the name/dependency preflight; an actual Debian
 `lb build` still could not run (no live-build/root Debian host).
 Everything verifiable in each environment was run; what could not run is
 listed as NOT RUN with the exact blocker. Reproduce locally with
 `tools/test.sh`.
 
-## Unit tests — PASS (87 tests)
+## Unit tests — PASS (90 tests)
 
-Latest `tools/test.sh` run (unittest fallback) → **87 passed**:
-73 broker tests (including corpus-as-test), 3 assistant-gate tests and
-11 desktop tests. Exact durations from the final run: 73 tests in
-3.316 s, 3 tests in 0.000 s, 11 tests in 0.040 s. Covers: default-deny
+Latest `tools/test.sh` run (unittest fallback) → **90 passed**:
+76 broker tests (including corpus-as-test), 3 assistant-gate tests and
+11 desktop tests. Exact durations from the final run: 76 tests in
+3.130 s, 3 tests in 0.000 s, 11 tests in 0.056 s. Covers: default-deny
 matrix, exact file/dir scoping, traversal & symlink fail-closed (incl.
 write-through leaving target untouched), selected-directory grants
 issuing `dir` scope and actually listing, replacement of a selected
@@ -39,9 +39,13 @@ on newly created write targets, pinned-write safety (normal write
 preserving inode and mode, replacement not truncated, deleted target not
 recreated, target-write failure and zero-progress rollback restoring the
 original, explicit rollback-failure reporting), unpinned write failure
-preservation and temp-file cleanup, zero-progress/oversized `write()`
-rejection, mode-bit preservation, symlink-target rejection, setuid/setgid
-bits cleared on replacement, daemon singleton locking, manifest
+preservation and staging cleanup, private `0700` staging (file created
+`0600`, destination mode applied inside it),
+staging-path symlink substitution not redirecting the FD-anchored rename,
+staged-source symlink replacement rejection, zero-progress/oversized
+`write()` rejection, mode-bit preservation, symlink-target rejection,
+setuid/setgid bits cleared on replacement, daemon singleton locking,
+manifest
 strictness (unsupported ops ungrantable), real Unix-socket round-trip,
 assistant disabled + read-only surface, activity filters/search/chain
 (and malformed-log fallback), and the Aurora shell core (desktop-entry
@@ -89,18 +93,19 @@ cases, plus the build failure/stale-artifact paths. No security
 expectation was weakened.
 
 The write-safety follow-up made write failures non-destructive in the
-reported-error case. Unpinned writes now stage bytes in a private
-same-directory temp file, fsync it, re-check that the target is still the
-same regular file (never a symlink), and rename it into place; a failed
-write, fsync or rename leaves the original file unchanged and removes the
-temp file. Pinned writes keep their inode identity: new bytes are staged,
+reported-error case. Unpinned writes now stage bytes in a private staging
+directory in the target's parent, fsync the staged file, re-check that
+both the staged source and the target are still the expected regular files
+(never symlinks), and rename into place; a failed write, fsync or rename
+leaves the original file unchanged and removes the staging files. Pinned
+writes keep their inode identity: new bytes are staged,
 old bytes backed up, and the target is overwritten from offset zero and
 truncated to the new length only after all new bytes are accepted. A
 target-write failure restores the backup; a failed rollback is reported
 explicitly rather than masked as success. Zero-progress and
 oversized `os.write()` results now fail explicitly instead of looping or
 being silently accepted. Tests cover unpinned
-failure preservation, temp cleanup, zero/oversized results, mode
+failure preservation, staging cleanup, zero/oversized results, mode
 preservation (including setuid/setgid clearing), symlink rejection, pinned
 inode/mode preservation, and pinned rollback on write failure and zero
 progress, including explicit reporting when rollback itself fails.
@@ -109,6 +114,28 @@ crash-atomic: a crash during a pinned in-place update can still leave
 partial content, unpinned replacement does not preserve ownership/ACLs/
 xattrs or hard links, and rollback needs read permission on the pinned
 file.
+
+The staging-race follow-up hardened unpinned writes further: staging now
+uses an owner-verified `0700` directory created inside the target's parent
+and anchored to the already-opened parent FD, so it stays on the same
+filesystem. The staged file is created `0600`; the destination rwx mode is
+applied while it is still inside the private directory, so confidentiality
+comes from the `0700` directory. The final `rename` uses the
+held staging FD rather than the staging pathname, and the staged inode is
+re-checked immediately before rename. Tests assert the private
+directory/file modes and inspect staged bytes before rename, swap the
+staging directory name with a symlink (the write still uses the held FD and
+the attacker's file is untouched), and replace the staged file with a
+symlink (rejected, target unchanged). No separate-UID process is available
+in this sandbox, so confidentiality is demonstrated by mode/owner
+enforcement rather than by dropping privileges. Residual races: same-UID
+processes can enter the `0700` directory (outside the broker's cross-user
+boundary); a same-UID source swap after the final check remains
+theoretically possible; another user with write access to a non-sticky
+parent can rename the staging entry, causing a reported failure or an
+empty-directory leftover, but cannot read or substitute the staged bytes
+because the held directory remains `0700`; and a last-instant destination
+replacement between the final target check and `rename` remains.
 
 ## Security corpus — PASS (all 10 criteria)
 

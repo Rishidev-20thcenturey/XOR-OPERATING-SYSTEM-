@@ -9,10 +9,12 @@ upstream checks (defence in depth):
   ``O_NOFOLLOW``), so approval-time validation cannot be raced.
 * Inode pins from file/directory-selection grants are checked with
   ``fstat`` before any content is read, listed, written or truncated.
-* Unpinned writes are staged in the target directory, fsynced and renamed
-  into place, so a failed write leaves the original file untouched.  The
-  original rwx permission bits are copied to the staged file; ownership,
-  ACLs, extended attributes and setuid/setgid bits are not (documented in
+* Unpinned writes are staged in a private 0700 directory anchored to the
+  target's parent FD, fsynced, re-checked (source and destination) and
+  renamed into place, so a failed write leaves the original file untouched
+  and other users cannot read or substitute the staged bytes.  The original
+  rwx permission bits are copied to the staged file; ownership, ACLs,
+  extended attributes and setuid/setgid bits are not (documented in
   ``broker/README.md``).
 * Pinned writes update the pinned inode in place: replacing it would break
   the grant's identity guarantee.  The old content is copied to an
@@ -118,10 +120,13 @@ def _atomic_replace(capability: Capability, canonical_path: str, content: bytes)
     """Stage an unpinned write and rename it over the target atomically.
 
     There is no inode pin to preserve, so replacing the directory entry is
-    safe and gives failure atomicity.  The target is opened without
-    ``O_TRUNC`` (and without ``O_CREAT``) first to prove it is a writable
-    regular file and to capture its mode.  If it is missing, only the
-    directory's write permission is needed to create the replacement.
+    safe and gives failure atomicity.  Staging happens in a private 0700
+    directory anchored to the target's parent FD, so another user cannot
+    read the staged bytes or substitute the source entry.  The target is
+    opened without ``O_TRUNC`` (and without ``O_CREAT``) first to prove it
+    is a writable regular file and to capture its mode.  If it is missing,
+    only the directory's write permission is needed to create the
+    replacement.
     """
     parent_fd, name = open_scoped_parent(capability.resource, canonical_path)
     try:
@@ -137,30 +142,47 @@ def _atomic_replace(capability: Capability, canonical_path: str, content: bytes)
                 # on a freshly staged file whose content came from a tool.
                 mode = stat.S_IMODE(st.st_mode) & 0o777
 
-            temp_fd, temp_name = _open_temp(parent_fd)
+            # Stage inside a private 0700 directory anchored to the opened
+            # parent FD.  The directory is created inside the target's parent
+            # so the final rename stays on the same filesystem.  Other users
+            # cannot enter it or replace the source entry by pathname.
+            stage_fd, stage_name = _open_stage_dir(parent_fd)
+            stage_id = _identity(stage_fd)
             try:
+                temp_fd, temp_name = _open_temp(stage_fd)
                 try:
-                    _write_all(temp_fd, content)
-                    os.fchmod(temp_fd, mode)
-                    os.fsync(temp_fd)
-                finally:
-                    os.close(temp_fd)
+                    try:
+                        _write_all(temp_fd, content)
+                        os.fchmod(temp_fd, mode)
+                        os.fsync(temp_fd)
+                        source_id = _identity(temp_fd)
+                    finally:
+                        os.close(temp_fd)
 
-                # Re-check immediately before the rename: a symlink or a
-                # different file must not be silently replaced.
-                _verify_target_unchanged(parent_fd, name, expected)
-                os.rename(temp_name, name, src_dir_fd=parent_fd,
-                          dst_dir_fd=parent_fd)
-                temp_name = None
-                try:
-                    os.fsync(parent_fd)
-                except OSError:
-                    # The file data is already fsynced; directory fsync is
-                    # best-effort durability, not a correctness guarantee.
-                    pass
+                    # The private directory is the primary control.  The
+                    # source identity check is defence in depth against
+                    # same-user substitution, which is outside the broker's
+                    # cross-user boundary.
+                    _verify_source_unchanged(stage_fd, temp_name, source_id)
+                    # Re-check immediately before the rename: a symlink or a
+                    # different file must not be silently replaced.
+                    _verify_target_unchanged(parent_fd, name, expected)
+                    os.rename(temp_name, name, src_dir_fd=stage_fd,
+                              dst_dir_fd=parent_fd)
+                    temp_name = None
+                    try:
+                        os.fsync(parent_fd)
+                    except OSError:
+                        # The file data is already fsynced; directory fsync
+                        # is best-effort durability, not a correctness
+                        # guarantee.
+                        pass
+                finally:
+                    if temp_name is not None:
+                        _unlink_quiet(stage_fd, temp_name)
             finally:
-                if temp_name is not None:
-                    _unlink_quiet(parent_fd, temp_name)
+                os.close(stage_fd)
+                _rmdir_stage_quiet(parent_fd, stage_name, stage_id)
         finally:
             if existing_fd is not None:
                 os.close(existing_fd)
@@ -277,6 +299,57 @@ def _open_temp(parent_fd: int):
     raise OSError(errno.EEXIST, "could not allocate temporary write file")
 
 
+def _open_stage_dir(parent_fd: int):
+    """Create and open a private 0700 staging directory in ``parent_fd``.
+
+    Staging inside the target's parent keeps the final rename on the same
+    filesystem.  The directory is created with an unguessable name and then
+    re-opened with ``O_NOFOLLOW``; owner and mode are verified so a raced
+    replacement (or permissive default ACL) cannot expose the staged bytes.
+    """
+    for _ in range(16):
+        name = f"{_TEMP_PREFIX}dir-{os.getpid()}-{secrets.token_hex(8)}"
+        try:
+            os.mkdir(name, 0o700, dir_fd=parent_fd)
+        except FileExistsError:
+            continue
+        fd = None
+        try:
+            fd = os.open(
+                name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
+                dir_fd=parent_fd,
+            )
+            st = os.fstat(fd)
+            if not stat.S_ISDIR(st.st_mode) or st.st_uid != os.geteuid():
+                raise OSError(errno.EPERM, "unsafe staging directory")
+            if st.st_mode & 0o077:
+                raise OSError(errno.EPERM, "staging directory is not private")
+            return fd, name
+        except BaseException:
+            if fd is not None:
+                os.close(fd)
+            _rmdir_quiet(parent_fd, name)
+            raise
+    raise OSError(errno.EEXIST, "could not allocate staging directory")
+
+
+def _identity(fd: int) -> tuple:
+    st = os.fstat(fd)
+    return st.st_dev, st.st_ino
+
+
+def _verify_source_unchanged(stage_fd: int, name: str, expected: tuple) -> None:
+    """Defence in depth: the staged source must still be our regular file."""
+    try:
+        st = os.stat(name, dir_fd=stage_fd, follow_symlinks=False)
+    except FileNotFoundError:
+        raise OSError(errno.ESTALE, "staged write file disappeared") from None
+    if not stat.S_ISREG(st.st_mode):
+        raise OSError(errno.ESTALE, "staged write file is not regular")
+    if (st.st_dev, st.st_ino) != expected:
+        raise OSError(errno.ESTALE, "staged write file changed")
+
+
 def _open_existing_regular(parent_fd: int, name: str):
     """Open an existing target for a writability/type check, no truncation.
 
@@ -338,6 +411,26 @@ def _unlink_quiet(parent_fd: int, name: str) -> None:
         os.unlink(name, dir_fd=parent_fd)
     except OSError:
         pass
+
+
+def _rmdir_quiet(parent_fd: int, name: str) -> None:
+    try:
+        os.rmdir(name, dir_fd=parent_fd)
+    except OSError:
+        pass
+
+
+def _rmdir_stage_quiet(parent_fd: int, name: str, expected: tuple) -> None:
+    """Remove the staging directory only if its name still names our dir."""
+    try:
+        st = os.stat(name, dir_fd=parent_fd, follow_symlinks=False)
+    except OSError:
+        return
+    if not stat.S_ISDIR(st.st_mode):
+        return
+    if (st.st_dev, st.st_ino) != expected:
+        return
+    _rmdir_quiet(parent_fd, name)
 
 
 def _fail(request, capability, message: str) -> Outcome:

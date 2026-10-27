@@ -200,6 +200,111 @@ class TestConfirmationFlow(BrokerCase):
         self.assertEqual(self._read(paths["out.txt"]), "old")
         self.assertEqual(self._temp_files(), [])
 
+    def test_staging_is_private_and_not_exposed_in_target_dir(self):
+        broker, paths, _ = self.make(ScriptedConfirmation(default=True))
+        os.chmod(paths["out.txt"], 0o644)
+        observed = {}
+        real_verify = executor._verify_source_unchanged
+
+        def inspect(stage_fd, temp_name, expected):
+            stage_st = os.fstat(stage_fd)
+            observed["stage_mode"] = stat.S_IMODE(stage_st.st_mode)
+            observed["stage_dev"] = stage_st.st_dev
+            observed["root_dev"] = os.stat(self.root).st_dev
+            file_st = os.stat(temp_name, dir_fd=stage_fd,
+                               follow_symlinks=False)
+            observed["file_mode"] = stat.S_IMODE(file_st.st_mode)
+            observed["file_dev"] = file_st.st_dev
+            fd = os.open(temp_name, os.O_RDONLY, dir_fd=stage_fd)
+            try:
+                observed["data"] = os.read(fd, 1024)
+            finally:
+                os.close(fd)
+            observed["target"] = self._read(paths["out.txt"])
+            observed["top"] = sorted(os.listdir(self.root))
+            return real_verify(stage_fd, temp_name, expected)
+
+        with patch("xor_broker.executor._verify_source_unchanged",
+                   side_effect=inspect):
+            out = broker.handle(ActionRequest(
+                "tool-a", Operation.WRITE_FILE, paths["out.txt"],
+                b"private staged content"))
+
+        self.assertEqual(out.status, OutcomeStatus.EXECUTED)
+        # Confidentiality comes from the private directory; the staged file
+        # already carries the destination mode.
+        self.assertEqual(observed["stage_mode"] & 0o077, 0)
+        self.assertEqual(observed["file_mode"], 0o644)
+        self.assertEqual(observed["stage_dev"], observed["root_dev"])
+        self.assertEqual(observed["file_dev"], observed["root_dev"])
+        self.assertEqual(observed["data"], b"private staged content")
+        self.assertEqual(observed["target"], "old")
+        stage_dirs = [n for n in observed["top"]
+                      if n.startswith(".xor-write-dir-")]
+        self.assertEqual(len(stage_dirs), 1)
+        stray_files = [n for n in observed["top"]
+                       if n.startswith(".xor-write-")
+                       and not n.startswith(".xor-write-dir-")]
+        self.assertEqual(stray_files, [])
+        self.assertEqual(self._temp_files(), [])
+
+    def test_staging_path_substitution_cannot_redirect_rename(self):
+        broker, paths, _ = self.make(ScriptedConfirmation(default=True))
+        attacker = os.path.join(self.root, "attacker")
+        os.makedirs(attacker)
+        real_verify = executor._verify_target_unchanged
+
+        def substitute(parent_fd, name, expected):
+            stage_names = [n for n in os.listdir(self.root)
+                           if n.startswith(".xor-write-dir-")]
+            self.assertEqual(len(stage_names), 1)
+            stage_name = stage_names[0]
+            stage_path = os.path.join(self.root, stage_name)
+            staged = os.listdir(stage_path)
+            self.assertEqual(len(staged), 1)
+            with open(os.path.join(attacker, staged[0]), "wb") as fh:
+                fh.write(b"attacker payload")
+            # Move the real staging directory and put a symlink in its place.
+            os.rename(stage_path, os.path.join(self.root, "stolen-stage"))
+            os.symlink(attacker, stage_path)
+            return real_verify(parent_fd, name, expected)
+
+        with patch("xor_broker.executor._verify_target_unchanged",
+                   side_effect=substitute):
+            out = broker.handle(ActionRequest(
+                "tool-a", Operation.WRITE_FILE, paths["out.txt"],
+                b"approved content"))
+
+        self.assertEqual(out.status, OutcomeStatus.EXECUTED)
+        self.assertEqual(self._read(paths["out.txt"]), "approved content")
+        staged_name = os.listdir(attacker)[0]
+        with open(os.path.join(attacker, staged_name), "rb") as fh:
+            self.assertEqual(fh.read(), b"attacker payload")
+
+    def test_staged_source_symlink_replacement_is_rejected(self):
+        broker, paths, _ = self.make(ScriptedConfirmation(default=True))
+        victim = os.path.join(self.root, "victim.txt")
+        with open(victim, "w") as fh:
+            fh.write("victim content")
+        real_verify = executor._verify_source_unchanged
+
+        def tamper(stage_fd, temp_name, expected):
+            os.unlink(temp_name, dir_fd=stage_fd)
+            os.symlink(victim, temp_name, dir_fd=stage_fd)
+            return real_verify(stage_fd, temp_name, expected)
+
+        with patch("xor_broker.executor._verify_source_unchanged",
+                   side_effect=tamper):
+            out = broker.handle(ActionRequest(
+                "tool-a", Operation.WRITE_FILE, paths["out.txt"],
+                b"replacement"))
+
+        self.assertEqual(out.status, OutcomeStatus.FAILED)
+        self.assertIn("not regular", out.error)
+        self.assertEqual(self._read(paths["out.txt"]), "old")
+        self.assertEqual(self._read(victim), "victim content")
+        self.assertEqual(self._temp_files(), [])
+
     def test_write_preserves_mode_bits(self):
         broker, paths, _ = self.make(ScriptedConfirmation(default=True))
         os.chmod(paths["out.txt"], 0o640)

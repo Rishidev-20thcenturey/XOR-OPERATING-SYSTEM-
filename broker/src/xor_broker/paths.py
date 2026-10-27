@@ -20,7 +20,8 @@ traversal cannot distinguish that.  File grants obtained via file
 selection can pin ``(st_dev, st_ino)`` (see ``Capability.pin_*``) which
 the executor verifies after opening.  Write opens never use ``O_TRUNC``;
 the executor validates the target (and any pin) before it replaces or
-truncates content.  Unpinned writes stage content in the target directory
+truncates content.  Unpinned writes stage content in a private 0700
+subdirectory of the target directory (anchored to the opened parent FD)
 and rename it into place; pinned writes update the pinned inode in place so
 the grant keeps referring to the same inode (see ``executor.py``).
 """

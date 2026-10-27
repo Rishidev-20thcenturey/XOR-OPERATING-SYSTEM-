@@ -44,10 +44,18 @@ can be **denied explicitly and audited**; manifests cannot grant them.
   checks, so policy/executor races cannot redirect access. Manifest
   loading uses the same no-follow + regular-file policy as
   `xor-broker init`.
-- Unpinned writes stage content in a private temp file in the target
-  directory, fsync it, re-check the directory entry (no symlink, same
-  inode) and rename it into place. A failed write, fsync or rename leaves
-  the original content untouched. Ordinary rwx mode bits are copied;
+- Unpinned writes stage content inside a private `0700` staging directory
+  in the target's parent, anchored to the opened parent FD so the final
+  rename stays on the same filesystem. The staged file is created `0600`;
+  the destination rwx mode is applied while it is still inside the
+  owner-verified directory, so confidentiality comes from the `0700`
+  directory rather than the file mode. Another user cannot traverse the
+  directory, read the staged bytes or substitute the source entry; a
+  pathname swap of
+  the staging directory itself cannot redirect the FD-anchored `rename`.
+  The executor also re-checks the staged file's inode as defence in depth.
+  A failed write, fsync or rename leaves the original content untouched
+  and removes the staging files. Ordinary rwx mode bits are copied;
   ownership, ACLs, extended attributes, setuid/setgid bits and hard-link
   identity are not.
 - Pinned write targets are opened without `O_TRUNC` and verified against
@@ -88,14 +96,24 @@ not detectable from the log alone. An append failure is reported as
 Write-specific residuals: unpinned atomic replacement changes the inode,
 so hard links to the old file keep the old content and ownership/ACLs/
 extended attributes are not copied (ordinary rwx mode bits are; setuid/
-setgid bits are cleared). A replacement made in
-the last instant between the final identity check and `rename` can be
-overwritten, though the write cannot escape the granted directory because
-`rename` does not follow symlinks. Pinned in-place writes are rollback-
-protected against *reported* errors, not crash-atomic: a crash between
-truncate and restore can still leave partial content. Rollback needs read
-permission on the pinned file; without it the write fails before the
-target is modified. Concurrent writers to the same inode are not locked.
+setgid bits are cleared). Unpinned writes need write permission on the
+containing directory for staging and rename, even if the file itself is
+writable. The `0700` staging directory excludes other users, but a
+same-UID process can enter it (same-user code is outside the broker
+boundary); the staged-inode check narrows, but cannot eliminate, a
+last-instant same-UID source swap. Another user with write access to a
+non-sticky parent can rename or remove the staging directory entry, which
+can cause a reported failure or leave an empty directory behind, but
+cannot read the staged bytes or substitute the source because the
+directory remains `0700` and rename uses the held FD. A destination
+replacement made in the last instant between the final identity check and
+`rename` can be overwritten, though the write cannot escape the granted
+directory because `rename` does not follow symlinks. Pinned in-place
+writes are rollback-protected against *reported* errors, not crash-atomic:
+a crash between truncate and restore can still leave partial content.
+Rollback needs read permission on the pinned file; without it the write
+fails before the target is modified. Concurrent writers to the same inode
+are not locked.
 
 ## Layout
 
