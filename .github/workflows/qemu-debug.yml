@@ -18,15 +18,15 @@ on:
       run_id:
         description: GitHub Actions run that produced the ISO artifact
         required: true
-        default: "40542700041"
+        default: "40585123362"
       iso_artifact:
         description: ISO artifact name
         required: true
-        default: xor-iso-image-40542700041
+        default: xor-iso-image-40585123362
       build_artifact:
         description: Build-evidence artifact name
         required: true
-        default: xor-build-evidence-40542700041
+        default: xor-build-evidence-40585123362
       vga:
         description: Display device to test
         required: true
@@ -53,9 +53,9 @@ jobs:
     env:
       DEBIAN_FRONTEND: noninteractive
       GH_TOKEN: ${{ github.token }}
-      RUN_ID: ${{ inputs.run_id || '40542700041' }}
-      ISO_ARTIFACT: ${{ inputs.iso_artifact || 'xor-iso-image-40542700041' }}
-      BUILD_ARTIFACT: ${{ inputs.build_artifact || 'xor-build-evidence-40542700041' }}
+      RUN_ID: ${{ inputs.run_id || '40585123362' }}
+      ISO_ARTIFACT: ${{ inputs.iso_artifact || 'xor-iso-image-40585123362' }}
+      BUILD_ARTIFACT: ${{ inputs.build_artifact || 'xor-build-evidence-40585123362' }}
       VGA_MODE: ${{ inputs.vga || 'virtio-none' }}
       WAIT_SECONDS: ${{ inputs.wait_seconds || '120' }}
 

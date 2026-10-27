@@ -103,12 +103,27 @@ COMMANDS: tuple[tuple[str, str], ...] = (
     (
         "xfce-props",
         "runuser -u user -- env DISPLAY=:0 XDG_RUNTIME_DIR=/run/user/1000 "
-        "xfconf-query -c xfce4-desktop -l 2>&1 || true; "
+        "xfconf-query -c xfce4-desktop -l -v 2>&1 || true; "
         "runuser -u user -- env DISPLAY=:0 XDG_RUNTIME_DIR=/run/user/1000 "
         "xfconf-query -c xfce4-desktop "
         "-p /backdrop/screen0/monitor0/workspace0/last-image 2>&1 || true; "
         "runuser -u user -- env DISPLAY=:0 XDG_RUNTIME_DIR=/run/user/1000 "
         "xrandr --query 2>&1 || true",
+    ),
+    (
+        "wallpaper",
+        "echo '--- installed wallpapers ---'; "
+        "ls -l /usr/share/xor/wallpapers/ 2>&1 || true; "
+        "for f in /usr/share/xor/wallpapers/*; do "
+        "test -f \"$f\" && { echo \"$f\"; "
+        "stat -c 'size=%s mode=%a owner=%U:%G' \"$f\"; "
+        "od -An -tx1 -N3 \"$f\"; }; done 2>&1 || true; "
+        "echo '--- xfdesktop processes ---'; "
+        "ps -ef | grep -E 'xfdesktop|xor[_-]shell' | grep -v grep 2>&1 || true; "
+        "echo '--- xfdesktop journal ---'; "
+        "runuser -u user -- env XDG_RUNTIME_DIR=/run/user/1000 "
+        "journalctl --user -b --no-pager -n 800 2>&1 | "
+        "grep -Ei 'xfdesktop|backdrop|wallpaper|image' | tail -n 120 || true",
     ),
     (
         "session-env",
