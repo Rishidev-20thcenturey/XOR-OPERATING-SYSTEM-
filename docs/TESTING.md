@@ -13,7 +13,7 @@ tools/validate.sh    # static checks: compile, pyflakes, XML/JSON/shell...
 | Layer | Where | What it proves |
 |---|---|---|
 | Policy/paths unit tests | `broker/tests/test_policy_and_paths.py` | default-deny matrix, scope exactness, traversal/symlink fail-closed, expiry/exhaustion, untrusted-text irrelevance |
-| Broker end-to-end | `broker/tests/test_broker_e2e.py` | confirmation binding/staleness/replay, deny-by-default CLI, audit completeness + redaction + tamper detection, two-writer locking, fail-closed startup verification, durable `max_uses` across a rebuild, private manifest creation, daemon singleton locking, manifest rejection, real Unix-socket round-trip |
+| Broker end-to-end | `broker/tests/test_broker_e2e.py` | confirmation binding/staleness/replay, deny-by-default CLI, audit completeness + redaction + tamper detection, two-writer locking, fail-closed startup verification, durable `max_uses` across a rebuild and across concurrent threads/processes/daemon+CLI sharing one audit log, selected-directory listing through the executor, private manifest creation, symlinked-manifest refusal, daemon singleton locking, manifest rejection, real Unix-socket round-trip |
 | Security corpus | `security/` (200 scenarios) | Milestone-1 acceptance criteria, below |
 | Assistant gate | `assistant/tests/` | assistant disabled; declared surface read-only & broker-mapped; no direct file/network APIs in the stub |
 | Viewer + Aurora cores | `desktop/tests/` | audit loading/filter/search/chain status and malformed-log fallback; XOR Shell app discovery/search, config sanitising/round-trip and malformed-config fallback, battery/network/memory parsers, wallpaper catalog, panel-opacity CSS and Control Centre text mode |
@@ -67,6 +67,6 @@ expectation is corrected with a written justification.
   run `sudo tools/build-iso.sh && tools/run-qemu.sh` on a team machine
   and record the result in `TEST_RESULTS.md`.
 * Fuzzing the manifest/wire parsers, sustained concurrency/load (the
-  audit log has a two-writer locking test, but the daemon remains
-  single-threaded), and power-loss/fault-injection for the future
-  updater (Milestones 3–4).
+  audit log and `max_uses` have two-writer/concurrent-process tests, but
+  the daemon remains single-threaded and has no rate limiting), and
+  power-loss/fault-injection for the future updater (Milestones 3–4).

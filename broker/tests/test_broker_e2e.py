@@ -1,11 +1,13 @@
 """End-to-end broker tests: confirmation binding, audit, manifests, IPC."""
 import io
 import json
+import multiprocessing
 import os
 import stat
 import sys
 import tempfile
 import threading
+import time
 import unittest
 from datetime import timedelta
 from types import SimpleNamespace
@@ -23,7 +25,9 @@ from xor_broker.confirm import (  # noqa: E402
     ApprovalToken, AutoDenyConfirmation, CliConfirmation, ConfirmationManager,
     ScriptedConfirmation,
 )
-from xor_broker.manifest import ManifestError, parse_manifest  # noqa: E402
+from xor_broker.manifest import (  # noqa: E402
+    ManifestError, grant_for_selected_file, parse_manifest,
+)
 from xor_broker.models import (  # noqa: E402
     ActionRequest, Operation, OutcomeStatus, utcnow,
 )
@@ -50,6 +54,26 @@ def build(root, provider, files):
         AuditLog(os.path.join(root, "audit.jsonl")),
     )
     return broker, paths, os.path.join(root, "audit.jsonl")
+
+
+def concurrent_read_worker(manifest_path, audit_path, granted, start_path,
+                           result_path):
+    """Child-process helper for the cross-process max_uses test."""
+    broker = build_broker(
+        manifest_path, audit_path, provider=ScriptedConfirmation(default=True))
+    while not os.path.exists(start_path):
+        time.sleep(0.01)
+    real_execute = executor.execute
+
+    def slow_execute(*args, **kwargs):
+        time.sleep(0.2)
+        return real_execute(*args, **kwargs)
+
+    with patch("xor_broker.executor.execute", side_effect=slow_execute):
+        outcome = broker.handle(
+            ActionRequest("tool-a", Operation.READ_FILE, granted))
+    with open(result_path, "w") as fh:
+        fh.write(f"{outcome.status.value}\n{outcome.reason.value}\n")
 
 
 class BrokerCase(unittest.TestCase):
@@ -153,6 +177,25 @@ class TestConfirmationFlow(BrokerCase):
         self.assertFalse(sneaky.confirm(prompt))  # only exact word 'approve'
 
 
+class TestSelectedDirectoryGrant(BrokerCase):
+    def test_list_dir_grant_actually_lists_selected_directory(self):
+        selected = os.path.join(self.root, "selected")
+        os.makedirs(selected)
+        for name in ("b.txt", "a.txt"):
+            with open(os.path.join(selected, name), "w") as fh:
+                fh.write(name)
+        cap = grant_for_selected_file(
+            "tool-a", Operation.LIST_DIR, selected, "selected-dir")
+        broker = Broker(
+            PolicyEngine([cap]),
+            ConfirmationManager(AutoDenyConfirmation()),
+            AuditLog(os.path.join(self.root, "audit.jsonl")),
+        )
+        out = broker.handle(ActionRequest("tool-a", Operation.LIST_DIR, selected))
+        self.assertEqual(out.status, OutcomeStatus.EXECUTED)
+        self.assertEqual(out.listing, ["a.txt", "b.txt"])
+
+
 class TestAudit(BrokerCase):
     def test_every_request_audited_and_content_never_logged(self):
         broker, paths, audit_path = self.make(ScriptedConfirmation(default=True))
@@ -225,6 +268,15 @@ class TestManifestValidation(unittest.TestCase):
             with self.assertRaises(ManifestError, msg=str(case)):
                 parse_manifest(case)
 
+    def test_rejects_file_scoped_list_dir_grant(self):
+        bad = {"capabilities": [{
+            "capability_id": "x", "tool": "t", "operation": "list_dir",
+            "resource": {"type": "file", "path": "/tmp/a"},
+            "rights": ["read"],
+        }]}
+        with self.assertRaises(ManifestError):
+            parse_manifest(bad)
+
     def test_rejects_duplicate_ids(self):
         entry = {"capability_id": "dup", "tool": "t", "operation": "read_file",
                  "resource": {"type": "file", "path": "/x"}, "rights": ["read"]}
@@ -261,6 +313,125 @@ class TestDurableUseLimits(BrokerCase):
         out = second.handle(ActionRequest("tool-a", Operation.READ_FILE, granted))
         self.assertEqual(out.status, OutcomeStatus.DENIED_POLICY)
         self.assertEqual(out.reason.value, "capability_exhausted")
+
+
+class TestCrossProcessUseLimits(BrokerCase):
+    def _single_use_setup(self):
+        granted = os.path.join(self.root, "granted.txt")
+        audit_path = os.path.join(self.root, "audit.jsonl")
+        manifest_path = os.path.join(self.root, "manifest.json")
+        with open(granted, "w") as fh:
+            fh.write("only one execution")
+        manifest = {"capabilities": [{
+            "capability_id": "once", "tool": "tool-a",
+            "operation": "read_file",
+            "resource": {"type": "file", "path": granted},
+            "rights": ["read"], "max_uses": 1,
+        }]}
+        with open(manifest_path, "w") as fh:
+            json.dump(manifest, fh)
+        return granted, manifest_path, audit_path
+
+    def test_concurrent_requests_cannot_exceed_max_uses(self):
+        granted, manifest_path, audit_path = self._single_use_setup()
+        brokers = [
+            build_broker(manifest_path, audit_path,
+                         provider=ScriptedConfirmation(default=True))
+            for _ in range(2)
+        ]
+        barrier = threading.Barrier(2)
+        outcomes = []
+        real_execute = executor.execute
+
+        def slow_execute(*args, **kwargs):
+            # Widen the window between the policy decision and the audit
+            # append so an unserialised implementation would race.
+            time.sleep(0.2)
+            return real_execute(*args, **kwargs)
+
+        def run(broker):
+            barrier.wait()
+            outcomes.append(
+                broker.handle(ActionRequest("tool-a", Operation.READ_FILE, granted)))
+
+        with patch("xor_broker.executor.execute", side_effect=slow_execute):
+            threads = [threading.Thread(target=run, args=(broker,), daemon=True)
+                       for broker in brokers]
+            for thread in threads:
+                thread.start()
+            for thread in threads:
+                thread.join(5)
+                self.assertFalse(thread.is_alive(), "broker request deadlocked")
+
+        statuses = sorted(outcome.status.value for outcome in outcomes)
+        self.assertEqual(statuses, ["denied_policy", "executed"])
+        denied = next(o for o in outcomes if o.status is OutcomeStatus.DENIED_POLICY)
+        self.assertEqual(denied.reason.value, "capability_exhausted")
+        records = list(read_records(audit_path))
+        self.assertEqual(len(records), 2)
+        self.assertEqual(sum(r["result"] == "executed" for r in records), 1)
+        self.assertTrue(verify_chain(audit_path)[0])
+
+    def test_concurrent_processes_cannot_exceed_max_uses(self):
+        try:
+            ctx = multiprocessing.get_context("fork")
+        except ValueError:
+            self.skipTest("fork start method unavailable")
+        granted, manifest_path, audit_path = self._single_use_setup()
+        start_path = os.path.join(self.root, "start")
+        result_paths = [os.path.join(self.root, f"result-{i}")
+                        for i in range(2)]
+        processes = [
+            ctx.Process(target=concurrent_read_worker,
+                        args=(manifest_path, audit_path, granted, start_path,
+                              result_path))
+            for result_path in result_paths
+        ]
+        for process in processes:
+            process.start()
+        with open(start_path, "w") as fh:
+            fh.write("go")
+        for process in processes:
+            process.join(10)
+            self.assertEqual(process.exitcode, 0, "worker process failed")
+
+        outcomes = []
+        for result_path in result_paths:
+            with open(result_path) as fh:
+                status, reason = fh.read().splitlines()[:2]
+            outcomes.append((status, reason))
+        self.assertEqual(sorted(status for status, _ in outcomes),
+                         ["denied_policy", "executed"])
+        self.assertIn(("denied_policy", "capability_exhausted"), outcomes)
+        self.assertEqual(
+            sum(r["result"] == "executed" for r in read_records(audit_path)), 1)
+
+    def test_daemon_and_cli_share_use_limit(self):
+        from xor_broker.server import BrokerClient, serve
+
+        granted, manifest_path, audit_path = self._single_use_setup()
+        # Build the CLI-side broker first so it starts with a stale zero
+        # count; the daemon then consumes the only use.
+        cli_broker = build_broker(
+            manifest_path, audit_path, provider=ScriptedConfirmation(default=True))
+        daemon_broker = build_broker(
+            manifest_path, audit_path, provider=ScriptedConfirmation(default=True))
+        sock = os.path.join(self.root, "broker.sock")
+        thread = threading.Thread(target=serve, args=(daemon_broker, sock), daemon=True)
+        thread.start()
+        for _ in range(100):
+            if os.path.exists(sock):
+                break
+            threading.Event().wait(0.05)
+
+        self.assertEqual(BrokerClient("tool-a", sock).read_file(granted),
+                         b"only one execution")
+        stale = cli_broker.handle(
+            ActionRequest("tool-a", Operation.READ_FILE, granted))
+        self.assertEqual(stale.status, OutcomeStatus.DENIED_POLICY)
+        self.assertEqual(stale.reason.value, "capability_exhausted")
+        records = list(read_records(audit_path))
+        self.assertEqual(sum(r["result"] == "executed" for r in records), 1)
 
 
 class TestAuditHardening(BrokerCase):
@@ -329,6 +500,22 @@ class TestAuditHardening(BrokerCase):
         os.chmod(parent, 0o755)
         AuditLog(os.path.join(parent, "audit.jsonl"))
         self.assertEqual(stat.S_IMODE(os.stat(parent).st_mode), 0o755)
+
+    def test_init_refuses_symlinked_manifest_without_chmodding_target(self):
+        target = os.path.join(self.root, "real-manifest.json")
+        with open(target, "w") as fh:
+            json.dump({"capabilities": []}, fh)
+        os.chmod(target, 0o644)
+        manifest = os.path.join(self.root, "manifest.json")
+        os.symlink(target, manifest)
+
+        with patch("os.path.expanduser", return_value=self.root), \
+                patch("sys.stderr", new=io.StringIO()):
+            rc = cmd_init(SimpleNamespace(manifest=manifest))
+
+        self.assertEqual(rc, 2)
+        self.assertTrue(os.path.islink(manifest))
+        self.assertEqual(stat.S_IMODE(os.stat(target).st_mode), 0o644)
 
 
 class TestSocketRoundTrip(BrokerCase):

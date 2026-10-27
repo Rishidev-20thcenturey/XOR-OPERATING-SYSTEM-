@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import stat
 import sys
 import tempfile
 
@@ -136,14 +137,35 @@ def cmd_init(args) -> int:
             os.chmod(manifest_dir, 0o700)
         except OSError:
             pass
-    if os.path.exists(manifest_path):
+    if os.path.lexists(manifest_path):
         # Do not overwrite an existing manifest, but do not leave a
-        # user-controlled grant file world-readable either.
+        # user-controlled grant file world-readable either.  Open with
+        # O_NOFOLLOW and chmod the opened FD so a symlink can never redirect
+        # the chmod onto another file.
         try:
-            os.chmod(manifest_path, 0o600)
-        except OSError:
-            pass
-        print(f"Manifest already exists, leaving untouched: {manifest_path}")
+            fd = os.open(
+                manifest_path,
+                os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC,
+            )
+        except OSError as exc:
+            print(f"Refusing unsafe manifest path {manifest_path}: {exc}",
+                  file=sys.stderr)
+            return 2
+        try:
+            st = os.fstat(fd)
+            if not stat.S_ISREG(st.st_mode):
+                print(f"Refusing manifest path that is not a regular file: "
+                      f"{manifest_path}", file=sys.stderr)
+                return 2
+            try:
+                os.fchmod(fd, 0o600)
+            except OSError as exc:
+                print(f"Cannot secure existing manifest {manifest_path}: {exc}",
+                      file=sys.stderr)
+                return 2
+        finally:
+            os.close(fd)
+        print(f"Manifest already exists, leaving contents untouched: {manifest_path}")
         return 0
     manifest = {"capabilities": [
         {"capability_id": "demo-reader-notes", "tool": "demo-reader",

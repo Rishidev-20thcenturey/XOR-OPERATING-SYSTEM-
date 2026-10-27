@@ -9,17 +9,21 @@ because the Debian sandbox was unavailable. Everything verifiable in
 each environment was run; what could not run is listed as NOT RUN with
 the exact blocker. Reproduce locally with `tools/test.sh`.
 
-## Unit tests — PASS (53 tests)
+## Unit tests — PASS (62 tests)
 
-Latest `tools/test.sh` run (unittest fallback) → **53 passed**:
-39 broker tests (including corpus-as-test), 3 assistant-gate tests and
+Latest `tools/test.sh` run (unittest fallback) → **62 passed**:
+48 broker tests (including corpus-as-test), 3 assistant-gate tests and
 11 desktop tests. Covers: default-deny matrix, exact file/dir scoping,
 traversal & symlink fail-closed (incl. write-through leaving target
-untouched), confirmation digest-binding / expiry / replay rejection,
-deny-default CLI (blank, EOF, "yes" ≠ approve), provider-crash ⇒ deny,
-audit completeness + 0600 + tamper detection, durable `max_uses` across
-a broker rebuild, two-writer audit locking, fail-closed startup on a
-tampered/unreadable chain, private manifest creation, 0600 mode on
+untouched), selected-directory grants issuing `dir` scope and actually
+listing, rejection of file-scoped `list_dir` grants, confirmation
+digest-binding / expiry / replay rejection, deny-default CLI (blank,
+EOF, "yes" ≠ approve), provider-crash ⇒ deny, audit completeness +
+0600 + tamper detection, durable `max_uses` across a broker rebuild,
+concurrent thread/process requests and a daemon/CLI sharing one audit
+log all respecting a single-use limit, two-writer audit locking,
+fail-closed startup on a tampered/unreadable chain, private manifest
+creation, refusal to chmod a symlinked manifest target, 0600 mode on
 newly created write targets, daemon singleton locking, manifest
 strictness (unsupported ops ungrantable), real Unix-socket round-trip,
 assistant disabled + read-only surface, activity filters/search/chain

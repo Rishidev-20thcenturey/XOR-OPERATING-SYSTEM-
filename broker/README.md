@@ -33,9 +33,14 @@ can be **denied explicitly and audited**; manifests cannot grant them.
 ## Safety properties (implemented, tested)
 
 - Selecting/granting one file never grants its parent directory.
+  Directory listing requires an explicit `dir`-scoped grant; a
+  `list_dir` grant with `file` scope is rejected at manifest load.
 - Path traversal and symlink escapes fail closed. Enforcement is
   FD-anchored (`dir_fd` walks with `O_NOFOLLOW`), not string-prefix
   checks, so policy/executor races cannot redirect access.
+- `max_uses` is durable in the audit log and enforced under a
+  cross-process use lock, so concurrent daemon/CLI requests cannot
+  exceed the limit.
 - An approval for action A cannot authorise action B (digest binding),
   cannot be replayed (single use), and expires.
 - Untrusted document text (`untrusted_context`) is never read by the

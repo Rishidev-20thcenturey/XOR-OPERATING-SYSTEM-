@@ -6,7 +6,9 @@ Guarantees provided here:
   that raise (the record is appended from a ``finally`` block).
 * Nothing executes before policy approval, and no write executes before
   user confirmation.
-* Capability use counters increment only on successful execution.
+* Capability use counters increment only on successful execution and
+  are re-derived from the audit log under a cross-process use lock, so
+  ``max_uses`` is not exceeded by concurrent daemon/CLI instances.
 
 Honest scope (see docs/THREAT_MODEL.md): this mediates requests made
 *through this API* by cooperating tools.  It does not intercept syscalls
@@ -19,7 +21,7 @@ from __future__ import annotations
 from typing import Optional
 
 from . import executor
-from .audit import AuditLog
+from .audit import AuditIntegrityError, AuditLog
 from .confirm import ConfirmationManager, make_preview
 from .models import (
     ActionRequest,
@@ -40,6 +42,29 @@ class Broker:
         self.audit = audit
 
     def handle(self, request: ActionRequest) -> Outcome:
+        # Hold the cross-process use lock for the whole decision/execute/
+        # audit cycle.  This makes max_uses a real limit even when the
+        # daemon and a one-shot CLI (or two CLIs) act at the same time.
+        try:
+            with self.audit.execution_lock():
+                self._refresh_uses()
+                return self._handle_locked(request)
+        except AuditIntegrityError as exc:
+            # The use lock itself could not be trusted.  Fail closed, but
+            # still leave a denial record in the audit trail.
+            outcome = Outcome(OutcomeStatus.FAILED, ReasonCode.EXECUTION_ERROR,
+                              request.request_id,
+                              error=f"{type(exc).__name__}: {exc}")
+            self._audit(request, None, outcome, None)
+            return outcome
+
+    def _refresh_uses(self) -> None:
+        """Reload durable execution counts while holding the use lock."""
+        counts = self.audit.executed_counts_by_capability()
+        for capability in self.policy.capabilities:
+            capability.uses = counts.get(capability.capability_id, 0)
+
+    def _handle_locked(self, request: ActionRequest) -> Outcome:
         now = utcnow()
         decision = None
         outcome: Optional[Outcome] = None

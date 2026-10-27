@@ -22,7 +22,9 @@ from .models import (
     ActionRequest,
     Capability,
     Decision,
+    Operation,
     ReasonCode,
+    ScopeKind,
 )
 from .paths import canonicalize, scope_covers
 
@@ -56,6 +58,11 @@ class PolicyEngine:
             if cap.tool != request.tool:
                 continue
             if cap.operation is not request.operation:
+                continue
+            if (request.operation is Operation.LIST_DIR
+                    and cap.resource.kind is not ScopeKind.DIR):
+                # Keep policy aligned with the executor: a file-scoped
+                # capability cannot authorise a directory listing.
                 continue
             if required_right not in cap.rights:
                 continue

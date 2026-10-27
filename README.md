@@ -121,7 +121,7 @@ traversal denied; a write pause for approval; a network send refused;
 and the tamper-evident audit trail tying it together.
 
 ```sh
-tools/test.sh       # 53 tests + 200-scenario security corpus
+tools/test.sh       # 62 tests + 200-scenario security corpus
 tools/validate.sh   # code, assets, docs inputs and live-build wiring
 ```
 
@@ -166,7 +166,7 @@ Each build writes the ISO SHA-256 and `BUILD-MANIFEST.txt`. We do
 
 Latest sandbox results:
 
-* **53 unit tests passed** under unittest (broker, assistant gate,
+* **62 unit tests passed** under unittest (broker, assistant gate,
   Activity and Aurora cores).
 * **200 security scenarios + 50 injection twins passed**:
   0 out-of-grant actions executed, 0 network sends, 0 unconfirmed

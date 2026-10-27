@@ -21,7 +21,9 @@ import fcntl
 import hashlib
 import json
 import os
+import stat
 import uuid
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from typing import Iterator, Optional
 
@@ -78,6 +80,52 @@ class AuditLog:
                     f"audit log failed integrity check at seq {first_bad} "
                     f"({checked} records): {self.path}")
             self._seq, self._last_hash = tail
+
+    @contextmanager
+    def execution_lock(self):
+        """Serialize capability use across all broker processes.
+
+        ``max_uses`` is derived from executed audit records, so checking
+        and consuming a use must not race another daemon/CLI instance.
+        The lock is held across policy evaluation, execution and the
+        audit append that commits the use.  It is a sibling of the audit
+        log (not the log itself) so ``append`` can still take its own
+        exclusive lock without deadlocking.
+        """
+        lock_path = self.path + ".use.lock"
+        try:
+            fd = os.open(
+                lock_path,
+                os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW | os.O_CLOEXEC,
+                0o600,
+            )
+        except OSError as exc:
+            raise AuditIntegrityError(
+                f"capability-use lock cannot be opened: {lock_path}: {exc}") from exc
+        try:
+            st = os.fstat(fd)
+            if not stat.S_ISREG(st.st_mode) or st.st_nlink != 1:
+                raise AuditIntegrityError(
+                    f"capability-use lock is not a private regular file: {lock_path}")
+            try:
+                os.fchmod(fd, 0o600)
+            except OSError as exc:
+                raise AuditIntegrityError(
+                    f"capability-use lock cannot be secured: {lock_path}: {exc}") from exc
+            try:
+                fcntl.flock(fd, fcntl.LOCK_EX)
+            except OSError as exc:
+                raise AuditIntegrityError(
+                    f"capability-use lock cannot be acquired: {lock_path}: {exc}") from exc
+            try:
+                yield
+            finally:
+                try:
+                    fcntl.flock(fd, fcntl.LOCK_UN)
+                except OSError:
+                    pass
+        finally:
+            os.close(fd)
 
     def _read_tail(self):
         if not os.path.exists(self.path):

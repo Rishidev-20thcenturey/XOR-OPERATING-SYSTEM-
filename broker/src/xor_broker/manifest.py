@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import os
+import stat
 from datetime import datetime
 from typing import List
 
@@ -81,6 +82,12 @@ def parse_manifest(data: object) -> List[Capability]:
             raise ManifestError(f"{where}: resource.type must be 'file' or 'dir'") from None
         if not isinstance(path_raw, str) or not path_raw or "\x00" in path_raw:
             raise ManifestError(f"{where}: resource.path must be a non-empty string")
+        if operation is Operation.LIST_DIR and kind is not ScopeKind.DIR:
+            # The executor only lists directory-scoped grants.  Rejecting a
+            # mismatched grant here prevents a policy allow followed by an
+            # execution-time failure.
+            raise ManifestError(
+                f"{where}: list_dir requires resource.type 'dir'")
         # Grants are stored canonical so policy comparisons are exact.
         scope = ResourceScope(kind=kind, path=canonicalize(path_raw))
 
@@ -130,22 +137,36 @@ def load_manifest(path: str) -> List[Capability]:
 
 def grant_for_selected_file(tool: str, operation: Operation, selected_path: str,
                             capability_id: str) -> Capability:
-    """Build a file-scoped capability from a user file selection.
+    """Build a narrowly scoped capability from a user selection.
 
-    Only the selected file is granted - never its parent directory.  The
-    inode is pinned so replacing the path later cannot redirect the grant.
+    A ``LIST_DIR`` selection must name a directory and produces a
+    directory-scoped grant; other operations produce an exact file grant.
+    Only the selected path is granted - never its parent directory.  The
+    selected inode is pinned so replacing a file later cannot redirect
+    the grant.
     """
+    if operation not in SUPPORTED_OPERATIONS:
+        raise ValueError(f"{operation.value} is not grantable in the baseline")
     canonical = canonicalize(selected_path)
     st = os.stat(canonical)  # follows symlinks at *selection* time; the
     # canonical target is what was selected and is what gets pinned.
-    rights = (frozenset({"read"})
-              if operation in (Operation.READ_FILE, Operation.LIST_DIR)
-              else frozenset({"write"}))
+    if operation is Operation.LIST_DIR:
+        if not stat.S_ISDIR(st.st_mode):
+            raise ValueError("list_dir selection must be a directory")
+        kind = ScopeKind.DIR
+        rights = frozenset({"read"})
+    else:
+        if not stat.S_ISREG(st.st_mode):
+            raise ValueError(f"{operation.value} selection must be a regular file")
+        kind = ScopeKind.FILE
+        rights = (frozenset({"read"})
+                  if operation is Operation.READ_FILE
+                  else frozenset({"write"}))
     return Capability(
         capability_id=capability_id,
         tool=tool,
         operation=operation,
-        resource=ResourceScope(ScopeKind.FILE, canonical),
+        resource=ResourceScope(kind, canonical),
         rights=rights,
         pin_dev=st.st_dev,
         pin_ino=st.st_ino,
