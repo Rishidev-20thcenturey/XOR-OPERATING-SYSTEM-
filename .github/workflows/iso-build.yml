@@ -1,0 +1,392 @@
+name: ISO build and QEMU smoke test
+
+# Dedicated, slow path.  The fast CI workflow remains untouched and runs on
+# every push/PR; this one only runs for ISO-relevant changes on the review
+# branch (or by an explicit manual dispatch).
+on:
+  push:
+    branches:
+      - 'review/ac48e68-hardening'
+    paths:
+      - '.github/workflows/iso-build.yml'
+      - 'tools/build-iso.sh'
+      - 'tools/run-qemu.sh'
+      - 'tools/check-packages.py'
+      - 'os/live-build/**'
+      - 'broker/**'
+      - 'desktop/**'
+      - 'assistant/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: xor-iso-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build-and-smoke-test:
+    name: Build ISO and attempt QEMU boot
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    env:
+      DEBIAN_FRONTEND: noninteractive
+
+    steps:
+      - name: Checkout review branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Report disk and reclaim only unrelated runner toolchains
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts qemu-evidence
+          {
+            echo "runner: $(uname -a)"
+            echo "workspace: $PWD"
+            echo "disk before:"
+            df -hT /
+            df -B1G --output=avail / | tail -1 | awk '{print "root_avail_gib=" $1}'
+            echo "memory:"
+            free -h || true
+          } | tee artifacts/runner-disk-before.txt
+
+          avail_gb=$(df -Pk / | awk 'NR==2 {printf "%d", $4/1024/1024}')
+          echo "Available root space: ${avail_gb} GiB"
+
+          if [ "$avail_gb" -lt 20 ]; then
+            echo "Less than 20 GiB free; removing identified preinstalled toolchains unrelated to this repository."
+            for path in \
+              /usr/share/dotnet \
+              /usr/local/lib/android \
+              /opt/ghc \
+              /opt/hostedtoolcache/CodeQL \
+              /usr/local/share/chromium \
+              /usr/local/share/powershell
+            do
+              case "$path" in
+                /usr/*|/opt/*) ;;
+                *) echo "Refusing unsafe cleanup path: $path" >&2; exit 1 ;;
+              esac
+              if [ -e "$path" ]; then
+                echo "Removing $path"
+                sudo du -sh "$path" 2>/dev/null || true
+                sudo rm -rf -- "$path"
+              fi
+            done
+          else
+            echo "No preinstalled toolchain removal needed."
+          fi
+
+          {
+            echo "disk after cleanup:"
+            df -hT /
+            df -B1G --output=avail / | tail -1 | awk '{print "root_avail_gib=" $1}'
+          } | tee artifacts/runner-disk-after-cleanup.txt
+
+      - name: Install host QEMU, ISO inspection and screenshot tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            qemu-system-x86 qemu-utils ovmf xorriso socat imagemagick file
+          qemu-system-x86_64 --version | tee artifacts/qemu-version.txt
+          xorriso --version 2>&1 | head -n1 | tee artifacts/xorriso-version.txt
+          df -hT / | tee artifacts/runner-disk-after-packages.txt
+
+      # Build inside Debian trixie: the image targets trixie and the Ubuntu
+      # archive's live-build is older than the target distribution's tooling.
+      # The container is privileged only because live-build needs chroot and
+      # mount operations; it is a disposable GitHub-hosted runner.
+      - name: Build the actual ISO with Debian Live Build
+        id: build
+        shell: bash
+        run: |
+          set -uo pipefail
+          mkdir -p artifacts
+          echo "ok=false" >> "$GITHUB_OUTPUT"
+          {
+            echo "build_start_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "git_sha=$(git rev-parse HEAD)"
+            echo "git_branch=$(git rev-parse --abbrev-ref HEAD)"
+            echo "docker_version=$(docker --version 2>&1 || true)"
+          } | tee artifacts/build-start.txt
+
+          set +e
+          docker run --rm --privileged \
+            --volume "$PWD:/work" \
+            --workdir /work \
+            debian:trixie \
+            bash -c 'set -euo pipefail
+              apt-get update
+              apt-get install -y --no-install-recommends \
+                live-build debootstrap squashfs-tools xorriso \
+                isolinux syslinux-common syslinux-efi \
+                grub-pc-bin grub-efi-amd64-bin mtools dosfstools \
+                git python3 ca-certificates
+              git config --global --add safe.directory /work
+              exec tools/build-iso.sh' 2>&1 | tee artifacts/build-iso.log
+          BUILD_RC=${PIPESTATUS[0]}
+          set -e
+
+          echo "build_exit=$BUILD_RC" >> artifacts/build-start.txt
+          if [ "$BUILD_RC" -ne 0 ]; then
+            echo "::error::ISO build failed with exit code $BUILD_RC; see artifacts/build-iso.log"
+            exit "$BUILD_RC"
+          fi
+
+          manifest=os/live-build/BUILD-MANIFEST.txt
+          [ -s "$manifest" ] || { echo "::error::Build exited 0 but BUILD-MANIFEST.txt is missing/empty"; exit 1; }
+          iso_name=$(sed -n 's/^iso:[[:space:]]*//p' "$manifest" | head -n1)
+          [ -n "$iso_name" ] || { echo "::error::BUILD-MANIFEST.txt does not name an ISO"; exit 1; }
+          iso="os/live-build/$iso_name"
+          [ -f "$iso" ] || { echo "::error::Manifest ISO does not exist: $iso"; exit 1; }
+
+          # The container ran as root; make only the evidence files this job
+          # must read world-readable.  This avoids a recursive chown over the
+          # multi-gigabyte build tree.
+          sudo chmod a+r "$iso" "$iso.sha256" "$manifest"
+          [ ! -f os/live-build/build.log ] || sudo chmod a+r os/live-build/build.log
+
+          (
+            cd os/live-build
+            sha256sum -c "$(basename "$iso").sha256" | tee "../../artifacts/checksum-verify.txt"
+          )
+          size=$(stat -c%s "$iso")
+          sha=$(sha256sum "$iso" | cut -d' ' -f1)
+          lb_version=$(grep '^live-build:' "$manifest" | sed 's/^live-build:[[:space:]]*//')
+          {
+            echo "build_end_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "iso_name=$iso_name"
+            echo "iso_path=$iso"
+            echo "iso_size_bytes=$size"
+            echo "iso_size_gib=$(awk -v b="$size" 'BEGIN {printf "%.3f", b/1024/1024/1024}')"
+            echo "iso_sha256=$sha"
+            echo "live_build_version=$lb_version"
+            echo "manifest_sha256=$(sha256sum "$manifest" | cut -d' ' -f1)"
+            echo "disk_after_build:"
+            df -hT /
+          } | tee artifacts/build-summary.txt
+
+          cp "$manifest" artifacts/BUILD-MANIFEST.txt
+          cp "$iso.sha256" artifacts/
+          if [ -f os/live-build/build.log ]; then
+            cp os/live-build/build.log artifacts/lb-build.log
+          fi
+
+          {
+            echo "iso_path=$iso"
+            echo "iso_name=$iso_name"
+            echo "iso_size_bytes=$size"
+            echo "iso_sha256=$sha"
+            echo "ok=true"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Attempt QEMU boot with TCG and capture evidence
+        id: qemu
+        if: steps.build.outputs.ok == 'true'
+        continue-on-error: true
+        timeout-minutes: 45
+        shell: bash
+        env:
+          ISO_OUTPUT: ${{ steps.build.outputs.iso_path }}
+        run: |
+          set -u
+          mkdir -p qemu-evidence
+          ISO="$PWD/$ISO_OUTPUT"
+          QEMU_DIR="$PWD/qemu-evidence"
+          SERIAL="$QEMU_DIR/serial.log"
+          MONITOR="$QEMU_DIR/monitor.sock"
+          PPM="$QEMU_DIR/screenshot.ppm"
+          PNG="$QEMU_DIR/screenshot.png"
+          RESULT=INCONCLUSIVE
+          GRAPHICAL=0
+          LINUX=0
+          SIGNAL=""
+          QEMU_RC="not-started"
+          SCREENSHOT="not-captured"
+          rm -f "$SERIAL" "$MONITOR" "$PPM" "$PNG"
+
+          finish() {
+            {
+              echo "result=$RESULT"
+              echo "graphical_signal=$GRAPHICAL"
+              echo "linux_signal=$LINUX"
+              echo "signal=$SIGNAL"
+              echo "qemu_exit=$QEMU_RC"
+              echo "serial_log=$SERIAL"
+              echo "screenshot=$SCREENSHOT"
+              echo "note=Kernel and initrd extracted from the built ISO; the ISO was attached as a CD-ROM. Firmware/bootloader selection was not exercised by this direct-kernel smoke test."
+            } > "$QEMU_DIR/qemu-result.txt"
+            echo "result=$RESULT" >> "$GITHUB_OUTPUT"
+            exit 0
+          }
+
+          command -v qemu-system-x86_64 >/dev/null 2>&1 || {
+            RESULT=FAIL
+            SIGNAL="qemu-system-x86_64 not installed"
+            finish
+          }
+
+          if ! xorriso -osirrox on -indev "$ISO" -extract /live "$QEMU_DIR/live" \
+              > "$QEMU_DIR/xorriso-extract.log" 2>&1; then
+            RESULT=FAIL
+            SIGNAL="could not extract /live from ISO"
+            finish
+          fi
+          KERNEL=$(find "$QEMU_DIR/live" -maxdepth 1 -type f -name 'vmlinuz*' | head -n1)
+          INITRD=$(find "$QEMU_DIR/live" -maxdepth 1 -type f -name 'initrd*' | head -n1)
+          if [ -z "$KERNEL" ] || [ -z "$INITRD" ]; then
+            RESULT=FAIL
+            SIGNAL="kernel/initrd not found under /live"
+            finish
+          fi
+          echo "kernel=$KERNEL" > "$QEMU_DIR/boot-inputs.txt"
+          echo "initrd=$INITRD" >> "$QEMU_DIR/boot-inputs.txt"
+          file "$KERNEL" "$INITRD" >> "$QEMU_DIR/boot-inputs.txt" 2>&1 || true
+
+          # Direct kernel boot gives us a reliable serial console without
+          # changing the production ISO boot configuration.  The ISO remains
+          # attached so live-boot finds /live/filesystem.squashfs.
+          qemu-system-x86_64 \
+            -machine q35,accel=tcg \
+            -cpu qemu64 \
+            -m 4096 -smp 2 \
+            -kernel "$KERNEL" \
+            -initrd "$INITRD" \
+            -append "boot=live components hostname=XOR username=user console=ttyS0,115200 systemd.show_status=1 loglevel=6" \
+            -drive file="$ISO",media=cdrom,if=ide,index=2,readonly=on \
+            -vga none \
+            -device virtio-vga \
+            -device virtio-net-pci,netdev=net0 \
+            -netdev user,id=net0 \
+            -vnc 127.0.0.1:1 \
+            -serial "file:$SERIAL" \
+            -monitor "unix:$MONITOR,server,nowait" \
+            -no-reboot \
+            > "$QEMU_DIR/qemu-stdout.log" 2>&1 &
+          QEMU_PID=$!
+          echo "$QEMU_PID" > "$QEMU_DIR/qemu.pid"
+          echo "qemu_pid=$QEMU_PID"
+
+          # Strong signal: systemd reached the graphical target (LightDM is
+          # the display manager).  A bare login prompt only proves userspace.
+          for _ in $(seq 1 180); do
+            if [ -f "$SERIAL" ] && grep -Eqi \
+                'Reached target Graphical Interface|Started LightDM|Started lightdm\.service' \
+                "$SERIAL"; then
+              GRAPHICAL=1
+              SIGNAL=$(grep -Ei 'Reached target Graphical Interface|Started LightDM|Started lightdm\.service' "$SERIAL" | tail -n1)
+              break
+            fi
+            if [ -f "$SERIAL" ] && grep -Eqi \
+                'Reached target Multi-User System|XOR login:|login:' "$SERIAL"; then
+              LINUX=1
+            fi
+            if ! kill -0 "$QEMU_PID" 2>/dev/null; then
+              wait "$QEMU_PID"
+              QEMU_RC=$?
+              break
+            fi
+            sleep 10
+          done
+
+          if [ "$GRAPHICAL" != 1 ] && [ "$LINUX" = 1 ]; then
+            RESULT=INCONCLUSIVE
+            SIGNAL="Linux userspace reached, graphical target not confirmed"
+          elif [ "$GRAPHICAL" = 1 ]; then
+            RESULT=PASS
+          elif [ "$QEMU_RC" != "not-started" ]; then
+            RESULT=FAIL
+            SIGNAL="QEMU exited before a boot signal (exit $QEMU_RC)"
+          else
+            RESULT=INCONCLUSIVE
+            SIGNAL="No reliable boot-to-live-session signal within the timeout"
+          fi
+
+          # Give the desktop a moment after the graphical target, then ask the
+          # HMP monitor for a fresh framebuffer dump.
+          if [ "$GRAPHICAL" = 1 ]; then
+            sleep 20
+          fi
+          if [ -S "$MONITOR" ]; then
+            if timeout 15 sh -c "printf 'screendump %s\\n' '$PPM' | socat - UNIX-CONNECT:'$MONITOR'" \
+                > "$QEMU_DIR/screendump.log" 2>&1; then
+              if [ -s "$PPM" ]; then
+                SCREENSHOT="$PPM"
+                if command -v convert >/dev/null 2>&1; then
+                  convert "$PPM" "$PNG" >> "$QEMU_DIR/screendump.log" 2>&1 || true
+                  [ -s "$PNG" ] && SCREENSHOT="$PNG"
+                fi
+              fi
+            fi
+          fi
+          if [ "$SCREENSHOT" != "not-captured" ] && command -v identify >/dev/null 2>&1; then
+            identify "$SCREENSHOT" > "$QEMU_DIR/screenshot-info.txt" 2>&1 || true
+          fi
+
+          if kill -0 "$QEMU_PID" 2>/dev/null; then
+            if [ -S "$MONITOR" ]; then
+              printf 'quit\n' | timeout 5 socat - UNIX-CONNECT:"$MONITOR" \
+                > /dev/null 2>&1 || true
+            fi
+            sleep 5
+            kill "$QEMU_PID" 2>/dev/null || true
+          fi
+          wait "$QEMU_PID" 2>/dev/null || true
+
+          finish
+
+      - name: Upload build logs, manifest and checksum
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: xor-build-evidence-${{ github.run_id }}
+          path: |
+            artifacts/
+            os/live-build/BUILD-MANIFEST.txt
+            os/live-build/*.sha256
+            os/live-build/build.log
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Upload generated ISO
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: xor-iso-image-${{ github.run_id }}
+          path: os/live-build/*.iso
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Upload QEMU logs and screenshot
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: xor-qemu-evidence-${{ github.run_id }}
+          path: qemu-evidence/
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Fail unless the build succeeded and QEMU reached the live desktop
+        if: always()
+        shell: bash
+        env:
+          BUILD_OK: ${{ steps.build.outputs.ok }}
+          QEMU_RESULT: ${{ steps.qemu.outputs.result }}
+        run: |
+          echo "build_ok=$BUILD_OK"
+          echo "qemu_result=$QEMU_RESULT"
+          if [ "$BUILD_OK" != "true" ]; then
+            echo "::error::ISO build did not succeed; see the uploaded build evidence."
+            exit 1
+          fi
+          if [ "$QEMU_RESULT" != "PASS" ]; then
+            echo "::error::QEMU result was '$QEMU_RESULT', not PASS. See xor-qemu-evidence."
+            exit 1
+          fi
+          echo "ISO build succeeded and QEMU reached the graphical target."
