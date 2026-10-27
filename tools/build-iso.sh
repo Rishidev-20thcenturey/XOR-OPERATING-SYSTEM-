@@ -47,11 +47,46 @@ info "Configuring (lb config)"
 cd "$LBDIR"
 sh auto/config
 
-info "Building (lb build) - this downloads Debian packages, be patient"
-lb build 2>&1 | tee build.log
+info "Validating package list against Debian trixie"
+python3 "$REPO/tools/check-packages.py" \
+    --package-list "$LBDIR/config/package-lists/xor.list.chroot" \
+    || fail "Package list validation failed; fix the list before building."
 
-ISO=$(find . -maxdepth 1 -name '*.iso' -type f -print | sort | head -n1 || true)
-[ -n "$ISO" ] || fail "Build finished but no ISO was produced; see $LBDIR/build.log"
+# The status-file dance preserves lb's exit status through tee under POSIX
+# sh (dash has no pipefail).  The pre-build snapshot prevents an old ISO
+# from being reported as this build's artifact, even if the old file has a
+# future mtime or the build silently produces nothing.
+ISO_SNAPSHOT="$LBDIR/.iso-snapshot.$$"
+LB_STATUS="$LBDIR/.lb-status.$$"
+cleanup_build_files() {
+    rm -f "$ISO_SNAPSHOT" "$LB_STATUS"
+}
+trap cleanup_build_files EXIT HUP INT TERM
+: > "$ISO_SNAPSHOT" || fail "Cannot create build snapshot: $ISO_SNAPSHOT"
+for existing_iso in "$LBDIR"/*.iso; do
+    [ -f "$existing_iso" ] || continue
+    stat -c '%n %d %i %s %Y' "$existing_iso" >> "$ISO_SNAPSHOT" \
+        || fail "Cannot snapshot existing ISO: $existing_iso"
+done
+
+info "Building (lb build) - this downloads Debian packages, be patient"
+{ set +e; lb build 2>&1; echo $? > "$LB_STATUS"; } | tee build.log
+LB_RC=$(cat "$LB_STATUS" 2>/dev/null || echo 1)
+[ "$LB_RC" -eq 0 ] || fail "lb build failed (exit $LB_RC); see $LBDIR/build.log"
+
+ISO=""
+for candidate in "$LBDIR"/*.iso; do
+    [ -f "$candidate" ] || continue
+    candidate_sig=$(stat -c '%d %i %s %Y' "$candidate") \
+        || fail "Cannot stat ISO candidate: $candidate"
+    if ! grep -Fqx "$candidate $candidate_sig" "$ISO_SNAPSHOT"; then
+        ISO="$candidate"
+        break
+    fi
+done
+[ -n "$ISO" ] || fail "lb build exited 0 but no ISO changed or appeared during this build; refusing to reuse a stale ISO"
+cleanup_build_files
+trap - EXIT HUP INT TERM
 
 info "Checksumming and writing build manifest"
 sha256sum "$(basename "$ISO")" > "$(basename "$ISO").sha256"

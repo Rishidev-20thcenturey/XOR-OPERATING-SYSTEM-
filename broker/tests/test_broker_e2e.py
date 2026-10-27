@@ -116,6 +116,25 @@ class TestConfirmationFlow(BrokerCase):
         with open(paths["out.txt"]) as fh:
             self.assertEqual(fh.read(), "old")
 
+    def test_write_syscall_failure_is_reported(self):
+        broker, paths, _ = self.make(ScriptedConfirmation(default=True))
+        target = os.stat(paths["out.txt"])
+        real_write = os.write
+
+        def fail_target_write(fd, data):
+            opened = os.fstat(fd)
+            if (opened.st_dev, opened.st_ino) == (target.st_dev, target.st_ino):
+                raise OSError("simulated disk full")
+            return real_write(fd, data)
+
+        with patch("xor_broker.executor.os.write", side_effect=fail_target_write):
+            out = broker.handle(ActionRequest(
+                "tool-a", Operation.WRITE_FILE, paths["out.txt"], b"new content"))
+
+        self.assertEqual(out.status, OutcomeStatus.FAILED)
+        self.assertEqual(out.reason.value, "execution_error")
+        self.assertIn("disk full", out.error)
+
     def test_auto_deny_provider_blocks_all_writes(self):
         broker, paths, _ = self.make(AutoDenyConfirmation())
         out = broker.handle(ActionRequest("tool-a", Operation.WRITE_FILE,
@@ -219,6 +238,66 @@ class TestSelectedDirectoryGrant(BrokerCase):
         self.assertEqual(out.status, OutcomeStatus.DENIED_POLICY)
         self.assertEqual(out.reason.value, "path_escape")
         self.assertIsNone(out.listing)
+
+
+class TestPinnedWriteSafety(BrokerCase):
+    def _pinned_broker(self, selected):
+        cap = grant_for_selected_file(
+            "tool-a", Operation.WRITE_FILE, selected, "selected-write")
+        broker = Broker(
+            PolicyEngine([cap]),
+            ConfirmationManager(ScriptedConfirmation(default=True)),
+            AuditLog(os.path.join(self.root, "audit.jsonl")),
+        )
+        return broker
+
+    def test_pinned_file_normal_write_succeeds(self):
+        selected = os.path.join(self.root, "selected.txt")
+        with open(selected, "w") as fh:
+            fh.write("original")
+        broker = self._pinned_broker(selected)
+
+        out = broker.handle(ActionRequest(
+            "tool-a", Operation.WRITE_FILE, selected, b"approved replacement"))
+
+        self.assertEqual(out.status, OutcomeStatus.EXECUTED)
+        with open(selected) as fh:
+            self.assertEqual(fh.read(), "approved replacement")
+
+    def test_replaced_pinned_file_is_not_truncated(self):
+        selected = os.path.join(self.root, "selected.txt")
+        original = os.path.join(self.root, "selected-original.txt")
+        with open(selected, "w") as fh:
+            fh.write("original approved content")
+        broker = self._pinned_broker(selected)
+
+        os.rename(selected, original)
+        with open(selected, "w") as fh:
+            fh.write("replacement must survive")
+
+        out = broker.handle(ActionRequest(
+            "tool-a", Operation.WRITE_FILE, selected, b"attacker payload"))
+
+        self.assertEqual(out.status, OutcomeStatus.DENIED_POLICY)
+        self.assertEqual(out.reason.value, "path_escape")
+        with open(selected) as fh:
+            self.assertEqual(fh.read(), "replacement must survive")
+        with open(original) as fh:
+            self.assertEqual(fh.read(), "original approved content")
+
+    def test_deleted_pinned_file_is_not_recreated(self):
+        selected = os.path.join(self.root, "selected.txt")
+        with open(selected, "w") as fh:
+            fh.write("original")
+        broker = self._pinned_broker(selected)
+        os.unlink(selected)
+
+        out = broker.handle(ActionRequest(
+            "tool-a", Operation.WRITE_FILE, selected, b"must not create"))
+
+        self.assertEqual(out.status, OutcomeStatus.FAILED)
+        self.assertEqual(out.reason.value, "execution_error")
+        self.assertFalse(os.path.exists(selected))
 
 
 class TestAudit(BrokerCase):

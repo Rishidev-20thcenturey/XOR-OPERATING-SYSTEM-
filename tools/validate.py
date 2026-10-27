@@ -129,8 +129,15 @@ def t_livebuild_tree():
     for needle in ("trixie", "amd64", "iso-hybrid"):
         assert needle in config, f"auto/config lacks {needle}"
     packages = open(os.path.join(base, "config/package-lists/xor.list.chroot")).read()
-    for needle in ("gir1.2-wnck-3.0", "pavucontrol", "procps"):
-        assert needle in packages, f"package list lacks {needle}"
+    package_lines = {
+        line.strip() for line in packages.splitlines()
+        if line.strip() and not line.strip().startswith("#")
+    }
+    for needle in ("gir1.2-wnck-3.0", "pavucontrol", "procps",
+                   "thunar-volman", "fonts-inter", "fonts-dejavu", "polkitd"):
+        assert needle in package_lines, f"package list lacks {needle}"
+    for legacy in ("Thunar-volman", "fonts-Inter", "fonts-DejaVu", "policykit-1"):
+        assert legacy not in package_lines, f"package list retains invalid name {legacy}"
     hook = open(os.path.join(
         base, "config/hooks/normal/0900-xor-install.hook.chroot")).read()
     for needle in ("desktop/xor_shell", "/usr/local/bin/xor-shell",
@@ -168,6 +175,7 @@ def t_qemu_target():
 def t_shell():
     scripts = [
         "tools/build-iso.sh", "tools/run-qemu.sh", "tools/test.sh",
+        "tools/test-build-iso.sh",
         "os/live-build/auto/config", "os/live-build/auto/build",
         "os/live-build/auto/clean",
         "os/live-build/config/hooks/normal/0900-xor-install.hook.chroot",

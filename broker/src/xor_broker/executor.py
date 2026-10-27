@@ -8,7 +8,9 @@ upstream checks (defence in depth):
 * Files are opened through ``paths.open_scoped_*`` (FD-anchored,
   ``O_NOFOLLOW``), so approval-time validation cannot be raced.
 * Inode pins from file/directory-selection grants are checked with
-  ``fstat`` before any content is read or listed.
+  ``fstat`` before any content is read, listed, written or truncated.
+  Write opens omit ``O_TRUNC`` so a replaced pinned file is rejected
+  without destroying the replacement.
 """
 
 from __future__ import annotations
@@ -57,9 +59,14 @@ def execute(request: ActionRequest, capability: Capability, canonical_path: str,
         if op is Operation.WRITE_FILE:
             if request.content is None:
                 return _fail(request, capability, "write request without content")
-            FD = open_scoped_file(capability.resource, canonical_path, write=True)
+            # A pinned grant must refer to an existing inode.  Do not create
+            # a missing path, and do not truncate until the opened inode has
+            # been checked against the pin.
+            FD = open_scoped_file(capability.resource, canonical_path, write=True,
+                                  create=capability.pin_ino is None)
             try:
-                _check_pin(FD, capability, allow_new=True)
+                _check_pin(FD, capability)
+                os.ftruncate(FD, 0)
                 view = memoryview(request.content)
                 while view:
                     written = os.write(FD, view)
@@ -90,14 +97,12 @@ def execute(request: ActionRequest, capability: Capability, canonical_path: str,
                    request.request_id, capability.capability_id)
 
 
-def _check_pin(FD: int, capability: Capability, allow_new: bool = False) -> None:
+def _check_pin(FD: int, capability: Capability) -> None:
     if capability.pin_ino is None:
         return
     st = os.fstat(FD)
     if (st.st_dev, st.st_ino) != (capability.pin_dev, capability.pin_ino):
-        # A pinned grant whose file was replaced must fail closed.  For a
-        # not-yet-existing write target pinned grants are not issued, so
-        # allow_new never relaxes this today; kept explicit on purpose.
+        # A pinned grant whose file was replaced must fail closed.
         raise PathEscapeError("opened file does not match pinned inode of grant")
 
 

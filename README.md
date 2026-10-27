@@ -111,6 +111,9 @@ default-deny model:
   replaced/deleted log paths and in-process tail truncation fail closed.
 * Selected-directory `list_dir` grants are inode-pinned; the executor
   checks the opened directory before returning its contents.
+* Pinned write targets are opened without `O_TRUNC`; the opened inode is
+  checked before truncation, so replacing or deleting a selected file
+  fails closed and leaves the replacement untouched.
 * Manifest loading shares `xor-broker init`'s no-follow and
   regular-file policy.
 * If the audit append fails after an action, the broker returns an
@@ -147,7 +150,7 @@ traversal denied; a write pause for approval; a network send refused;
 and the tamper-evident audit trail tying it together.
 
 ```sh
-tools/test.sh       # 75 tests + 200-scenario security corpus
+tools/test.sh       # 79 tests + 200-scenario security corpus
 tools/validate.sh   # code, assets, docs inputs and live-build wiring
 ```
 
@@ -186,22 +189,37 @@ virtio-vga, virtio block/network, USB keyboard/tablet and serial
 logging. Live user: `user` (password `live` if prompted).
 
 Each build writes the ISO SHA-256 and `BUILD-MANIFEST.txt`. We do
-**not** claim bit-for-bit reproducibility yet.
+**not** claim bit-for-bit reproducibility yet. Before `lb build`, the
+script checks every package name and dependency name against the
+configured Debian trixie/updates/security indices. A failed `lb` build
+is never hidden by `tee`, and only an ISO that is new or changed since
+the pre-build snapshot is accepted; old ISOs are preserved but never
+reported as the current artifact. `--clean` explicitly removes prior
+build outputs.
 
 ## ✅ Evidence, not promises
 
 Latest verified results (2026-10-27, Termux/Android, Python 3.13.13):
 
-* **75 unit tests passed** under unittest: 61 broker (including
+* **79 unit tests passed** under unittest: 65 broker (including
   corpus-as-test), 3 assistant-gate and 11 desktop/Activity/Aurora.
+  The write-truncation regression proves a replaced pinned file keeps
+  its contents; deleted pinned targets are not recreated.
 * **200 security scenarios + 50 injection twins passed**:
   0 out-of-grant actions executed, 0 network sends, 0 unconfirmed
   writes, 0 audit/content leaks, 45/45 legitimate approved actions.
-* Static validation passes across 34 Python files, CSS/logo/wallpapers,
-  desktop entries, shell scripts and live-build wiring. Pyflakes and
-  ShellCheck were **not installed** in the latest run, so both were
-  skipped; no lint-clean claim is made for this run.
-* **NOT RUN:** ISO build, QEMU boot and GTK behaviour in the sandbox
+* **Build-script regressions passed** with a fake `lb`: failed builds
+  return failure through `tee`, failed package validation blocks the
+  build, a stale ISO is never selected, and old artifacts are preserved.
+* **Package list preflight passed** against the live trixie/updates/
+  security indices: 40 requested packages, 69,222 package names, and
+  dependency names resolve. A negative control with `Thunar-volman`
+  failed with a lowercase-name suggestion.
+* Static validation passes across 35 Python files, CSS/logo/wallpapers,
+  desktop entries, shell scripts and live-build wiring. ShellCheck
+  0.11.0 is clean; pyflakes was not installed and is reported as
+  skipped (no pyflakes-clean claim).
+* **NOT RUN:** actual ISO build, QEMU boot and GTK behaviour
   (`lb`/QEMU/KVM/display unavailable). Commands and exact blockers are
   in [`docs/TEST_RESULTS.md`](docs/TEST_RESULTS.md).
 

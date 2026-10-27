@@ -44,6 +44,10 @@ can be **denied explicitly and audited**; manifests cannot grant them.
   checks, so policy/executor races cannot redirect access. Manifest
   loading uses the same no-follow + regular-file policy as
   `xor-broker init`.
+- Pinned write targets are opened without `O_TRUNC`. The executor
+  verifies the opened inode against the file-selection pin before
+  truncating, so replacing or deleting the selected file fails closed
+  and leaves the replacement untouched.
 - `max_uses` is durable in the audit log and enforced under a
   cross-process use lock, so concurrent daemon/CLI requests cannot
   exceed the limit. Counts are rebuilt by verifying the chain from the

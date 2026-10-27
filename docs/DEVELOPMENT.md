@@ -57,6 +57,14 @@ tools/run-qemu.sh --headless   # serial console in your terminal (add console=tt
 tools/run-qemu.sh --fresh      # recreate the 16G qcow2 first (xor-QEMU-disk.qcow2)
 ```
 
+`build-iso.sh` checks the package list against the configured Debian
+trixie/updates/security indices before starting `lb build`. Run the same
+network check on its own with `python3 tools/check-packages.py`. A failed
+`lb build` is not hidden by the `tee` pipeline, and the script only accepts
+an ISO that is new or changed since the pre-build snapshot; old ISOs are
+preserved but never reported as the new artifact. `--clean` is the
+explicit way to remove prior build outputs.
+
 Live user `user`, password `live` if prompted (autologin on). In the
 session: **XOR Broker Demo**, **XOR Activity**, **XOR Shell** and
 **XOR Control Centre** in the menu; the broker daemon autostarts

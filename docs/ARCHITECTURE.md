@@ -36,7 +36,7 @@
 | Assistant stub | `assistant/src/xor_assistant/` | Future connection point; **disabled**, read-only declared surface | broker client (future) |
 | Security corpus | `security/` | 200 deterministic scenarios + acceptance criteria | broker public API |
 | OS image | `os/live-build/` | Debian trixie + XFCE live ISO assembling all of the above | Debian Live Build |
-| Tooling | `tools/` | build-iso, run-qemu (fixed virt target), test, validate | — |
+| Tooling | `tools/` | build-iso, check-packages, run-qemu (fixed virt target), test, test-build-iso, validate | — |
 
 Separation rule: the **policy engine has no UI, storage or model
 dependencies**. Replacing the confirmation dialog, the log viewer or

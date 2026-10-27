@@ -18,7 +18,8 @@ Known residual (documented, not hidden): a *hard link* inside a granted
 directory can alias an inode that also exists outside the directory; FD
 traversal cannot distinguish that.  File grants obtained via file
 selection can pin ``(st_dev, st_ino)`` (see ``Capability.pin_*``) which
-the executor verifies after opening.
+the executor verifies after opening.  Write opens never use ``O_TRUNC``;
+the executor checks the pin first and only then truncates the opened FD.
 """
 
 from __future__ import annotations
@@ -100,10 +101,17 @@ def _walk_to_parent_fd(base_fd: int, components: list) -> int:
         raise
 
 
-def open_scoped_file(scope: ResourceScope, canonical_target: str, write: bool) -> int:
+def open_scoped_file(scope: ResourceScope, canonical_target: str, write: bool,
+                     create: bool = True) -> int:
     """Open ``canonical_target`` strictly inside ``scope``. Returns an FD.
 
     Never follows symlinks. Raises PathEscapeError on any escape attempt.
+
+    Write opens deliberately omit ``O_TRUNC``: the executor must verify the
+    opened inode pin *before* calling ``ftruncate``.  This ensures a replaced
+    pinned file is rejected without destroying the replacement.  ``create``
+    is false for pinned grants so a vanished selected file cannot be
+    silently recreated under the same path.
     """
     if scope.kind is ScopeKind.DIR:
         if not is_within(scope.path, canonical_target):
@@ -125,7 +133,12 @@ def open_scoped_file(scope: ResourceScope, canonical_target: str, write: bool) -
         os.close(base_fd)
 
     flags = os.O_NOFOLLOW
-    flags |= (os.O_WRONLY | os.O_CREAT | os.O_TRUNC) if write else os.O_RDONLY
+    if write:
+        flags |= os.O_WRONLY
+        if create:
+            flags |= os.O_CREAT
+    else:
+        flags |= os.O_RDONLY
     try:
         # Newly created files are private by default.  Existing files keep
         # their mode; the user can loosen it deliberately after the write.

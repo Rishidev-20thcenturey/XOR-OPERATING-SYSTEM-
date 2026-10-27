@@ -8,7 +8,7 @@ xfce4
 xfce4-terminal
 xfce4-screenshooter
 xfce4-taskmanager
-Thunar-volman
+thunar-volman
 tumbler
 gvfs
 gvfs-backends
@@ -21,15 +21,16 @@ xorg
 # --- XOR appearance (see desktop/theme/) ---
 arc-theme
 papirus-icon-theme
-fonts-Inter
-fonts-DejaVu
+fonts-inter
+fonts-dejavu
 
 # --- System integration ---
 network-manager
 network-manager-gnome
 pipewire-audio
 sudo
-policykit-1
+# policykit-1 was removed in trixie; polkitd is the current daemon package.
+polkitd
 dbus
 udisks2
 upower
