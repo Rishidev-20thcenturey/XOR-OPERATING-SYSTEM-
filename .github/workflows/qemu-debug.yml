@@ -18,15 +18,15 @@ on:
       run_id:
         description: GitHub Actions run that produced the ISO artifact
         required: true
-        default: "40585123362"
+        default: "40588316194"
       iso_artifact:
         description: ISO artifact name
         required: true
-        default: xor-iso-image-40585123362
+        default: xor-iso-image-40588316194
       build_artifact:
         description: Build-evidence artifact name
         required: true
-        default: xor-build-evidence-40585123362
+        default: xor-build-evidence-40588316194
       vga:
         description: Display device to test
         required: true
@@ -39,7 +39,7 @@ on:
       wait_seconds:
         description: Seconds to wait after the serial login prompt before querying
         required: true
-        default: "120"
+        default: "240"
 
 permissions:
   actions: read
@@ -53,11 +53,11 @@ jobs:
     env:
       DEBIAN_FRONTEND: noninteractive
       GH_TOKEN: ${{ github.token }}
-      RUN_ID: ${{ inputs.run_id || '40585123362' }}
-      ISO_ARTIFACT: ${{ inputs.iso_artifact || 'xor-iso-image-40585123362' }}
-      BUILD_ARTIFACT: ${{ inputs.build_artifact || 'xor-build-evidence-40585123362' }}
+      RUN_ID: ${{ inputs.run_id || '40588316194' }}
+      ISO_ARTIFACT: ${{ inputs.iso_artifact || 'xor-iso-image-40588316194' }}
+      BUILD_ARTIFACT: ${{ inputs.build_artifact || 'xor-build-evidence-40588316194' }}
       VGA_MODE: ${{ inputs.vga || 'virtio-none' }}
-      WAIT_SECONDS: ${{ inputs.wait_seconds || '120' }}
+      WAIT_SECONDS: ${{ inputs.wait_seconds || '240' }}
 
     steps:
       - name: Checkout review branch
