@@ -1,4 +1,5 @@
 """End-to-end broker tests: confirmation binding, audit, manifests, IPC."""
+import errno
 import hashlib
 import io
 import json
@@ -30,7 +31,8 @@ from xor_broker.manifest import (  # noqa: E402
     ManifestError, grant_for_selected_file, load_manifest, parse_manifest,
 )
 from xor_broker.models import (  # noqa: E402
-    ActionRequest, Operation, OutcomeStatus, utcnow,
+    ActionRequest, Capability, Operation, OutcomeStatus, ResourceScope,
+    ScopeKind, utcnow,
 )
 from xor_broker.policy import PolicyEngine  # noqa: E402
 
@@ -55,6 +57,47 @@ def build(root, provider, files):
         AuditLog(os.path.join(root, "audit.jsonl")),
     )
     return broker, paths, os.path.join(root, "audit.jsonl")
+
+
+def _fail_writes(marker, behavior):
+    """Patch ``os.write`` for buffers containing ``marker`` only.
+
+    Other writes (audit, rollback copies, temp-file cleanup) use the real
+    syscall so the test isolates the target write.
+    """
+    real_write = os.write
+
+    def patched(fd, data):
+        if marker in bytes(data):
+            if behavior == "zero":
+                return 0
+            if behavior == "oversized":
+                return len(data) + 1
+            raise OSError(errno.ENOSPC, "simulated disk full")
+        return real_write(fd, data)
+
+    return patched
+
+
+def _fail_target_fd(selected, marker, behavior):
+    """Fail only writes of ``marker`` to the selected file's inode.
+
+    Staging and rollback copies write other bytes (or to other temporary
+    inodes), so this exercises the in-place pinned write and its rollback.
+    """
+    real_write = os.write
+    target = os.stat(selected)
+
+    def patched(fd, data):
+        opened = os.fstat(fd)
+        if ((opened.st_dev, opened.st_ino) == (target.st_dev, target.st_ino)
+                and marker in bytes(data)):
+            if behavior == "zero":
+                return 0
+            raise OSError(errno.ENOSPC, "simulated disk full")
+        return real_write(fd, data)
+
+    return patched
 
 
 def concurrent_read_worker(manifest_path, audit_path, granted, start_path,
@@ -116,24 +159,96 @@ class TestConfirmationFlow(BrokerCase):
         with open(paths["out.txt"]) as fh:
             self.assertEqual(fh.read(), "old")
 
-    def test_write_syscall_failure_is_reported(self):
+    def test_write_syscall_failure_preserves_existing_content(self):
         broker, paths, _ = self.make(ScriptedConfirmation(default=True))
-        target = os.stat(paths["out.txt"])
-        real_write = os.write
+        self.assertEqual(self._read(paths["out.txt"]), "old")
 
-        def fail_target_write(fd, data):
-            opened = os.fstat(fd)
-            if (opened.st_dev, opened.st_ino) == (target.st_dev, target.st_ino):
-                raise OSError("simulated disk full")
-            return real_write(fd, data)
-
-        with patch("xor_broker.executor.os.write", side_effect=fail_target_write):
+        with patch("xor_broker.executor.os.write",
+                   side_effect=_fail_writes(b"new content", "raise")):
             out = broker.handle(ActionRequest(
                 "tool-a", Operation.WRITE_FILE, paths["out.txt"], b"new content"))
 
         self.assertEqual(out.status, OutcomeStatus.FAILED)
         self.assertEqual(out.reason.value, "execution_error")
         self.assertIn("disk full", out.error)
+        self.assertEqual(self._read(paths["out.txt"]), "old")
+        self.assertEqual(self._temp_files(), [])
+
+    def test_write_zero_progress_fails_without_looping(self):
+        broker, paths, _ = self.make(ScriptedConfirmation(default=True))
+
+        with patch("xor_broker.executor.os.write",
+                   side_effect=_fail_writes(b"new content", "zero")):
+            out = broker.handle(ActionRequest(
+                "tool-a", Operation.WRITE_FILE, paths["out.txt"], b"new content"))
+
+        self.assertEqual(out.status, OutcomeStatus.FAILED)
+        self.assertIn("no progress", out.error)
+        self.assertEqual(self._read(paths["out.txt"]), "old")
+        self.assertEqual(self._temp_files(), [])
+
+    def test_write_oversized_result_fails_safely(self):
+        broker, paths, _ = self.make(ScriptedConfirmation(default=True))
+
+        with patch("xor_broker.executor.os.write",
+                   side_effect=_fail_writes(b"new content", "oversized")):
+            out = broker.handle(ActionRequest(
+                "tool-a", Operation.WRITE_FILE, paths["out.txt"], b"new content"))
+
+        self.assertEqual(out.status, OutcomeStatus.FAILED)
+        self.assertIn("reported", out.error)
+        self.assertEqual(self._read(paths["out.txt"]), "old")
+        self.assertEqual(self._temp_files(), [])
+
+    def test_write_preserves_mode_bits(self):
+        broker, paths, _ = self.make(ScriptedConfirmation(default=True))
+        os.chmod(paths["out.txt"], 0o640)
+
+        out = broker.handle(ActionRequest(
+            "tool-a", Operation.WRITE_FILE, paths["out.txt"], b"new content"))
+
+        self.assertEqual(out.status, OutcomeStatus.EXECUTED)
+        self.assertEqual(stat.S_IMODE(os.stat(paths["out.txt"]).st_mode), 0o640)
+        self.assertEqual(self._read(paths["out.txt"]), "new content")
+
+    def test_write_does_not_carry_setuid_bits(self):
+        broker, paths, _ = self.make(ScriptedConfirmation(default=True))
+        os.chmod(paths["out.txt"], 0o4755)
+
+        out = broker.handle(ActionRequest(
+            "tool-a", Operation.WRITE_FILE, paths["out.txt"], b"new content"))
+
+        self.assertEqual(out.status, OutcomeStatus.EXECUTED)
+        self.assertEqual(stat.S_IMODE(os.stat(paths["out.txt"]).st_mode), 0o755)
+
+    def test_write_rejects_symlink_target(self):
+        root = self.root
+        victim = os.path.join(root, "victim.txt")
+        with open(victim, "w") as fh:
+            fh.write("victim content")
+        link = os.path.join(root, "link.txt")
+        os.symlink(victim, link)
+
+        cap = Capability(
+            "w-link", "tool-a", Operation.WRITE_FILE,
+            ResourceScope(ScopeKind.DIR, root), frozenset({"write"}))
+        req = ActionRequest("tool-a", Operation.WRITE_FILE, link, b"payload")
+        token = ApprovalToken("p-link", req.action_digest(link),
+                              utcnow() + timedelta(seconds=60))
+        out = executor.execute(req, cap, link, utcnow(), token)
+
+        self.assertEqual(out.status, OutcomeStatus.DENIED_POLICY)
+        self.assertEqual(out.reason.value, "path_escape")
+        self.assertEqual(self._read(victim), "victim content")
+        self.assertTrue(os.path.islink(link))
+
+    def _read(self, path):
+        with open(path) as fh:
+            return fh.read()
+
+    def _temp_files(self):
+        return [name for name in os.listdir(self.root)
+                if name.startswith(".xor-write-")]
 
     def test_auto_deny_provider_blocks_all_writes(self):
         broker, paths, _ = self.make(AutoDenyConfirmation())
@@ -255,14 +370,87 @@ class TestPinnedWriteSafety(BrokerCase):
         selected = os.path.join(self.root, "selected.txt")
         with open(selected, "w") as fh:
             fh.write("original")
+        os.chmod(selected, 0o640)
+        before = os.stat(selected)
         broker = self._pinned_broker(selected)
 
         out = broker.handle(ActionRequest(
             "tool-a", Operation.WRITE_FILE, selected, b"approved replacement"))
 
         self.assertEqual(out.status, OutcomeStatus.EXECUTED)
+        after = os.stat(selected)
+        self.assertEqual((after.st_dev, after.st_ino),
+                         (before.st_dev, before.st_ino))
+        self.assertEqual(stat.S_IMODE(after.st_mode), 0o640)
         with open(selected) as fh:
             self.assertEqual(fh.read(), "approved replacement")
+
+    def test_pinned_write_failure_restores_original(self):
+        selected = os.path.join(self.root, "selected.txt")
+        with open(selected, "w") as fh:
+            fh.write("original pinned content")
+        before = os.stat(selected)
+        broker = self._pinned_broker(selected)
+
+        with patch("xor_broker.executor.os.write",
+                   side_effect=_fail_target_fd(selected, b"replacement payload",
+                                               "raise")):
+            out = broker.handle(ActionRequest(
+                "tool-a", Operation.WRITE_FILE, selected, b"replacement payload"))
+
+        self.assertEqual(out.status, OutcomeStatus.FAILED)
+        self.assertIn("disk full", out.error)
+        after = os.stat(selected)
+        self.assertEqual((after.st_dev, after.st_ino),
+                         (before.st_dev, before.st_ino))
+        with open(selected) as fh:
+            self.assertEqual(fh.read(), "original pinned content")
+
+    def test_pinned_zero_progress_restores_original(self):
+        selected = os.path.join(self.root, "selected.txt")
+        with open(selected, "w") as fh:
+            fh.write("original pinned content")
+        broker = self._pinned_broker(selected)
+
+        with patch("xor_broker.executor.os.write",
+                   side_effect=_fail_target_fd(selected, b"replacement payload",
+                                               "zero")):
+            out = broker.handle(ActionRequest(
+                "tool-a", Operation.WRITE_FILE, selected, b"replacement payload"))
+
+        self.assertEqual(out.status, OutcomeStatus.FAILED)
+        self.assertIn("no progress", out.error)
+        with open(selected) as fh:
+            self.assertEqual(fh.read(), "original pinned content")
+
+    def test_pinned_rollback_failure_is_reported(self):
+        selected = os.path.join(self.root, "selected.txt")
+        with open(selected, "w") as fh:
+            fh.write("original pinned content")
+        broker = self._pinned_broker(selected)
+        target = os.stat(selected)
+        real_write = os.write
+
+        def fail_new_and_rollback(fd, data):
+            opened = os.fstat(fd)
+            if (opened.st_dev, opened.st_ino) == (target.st_dev, target.st_ino):
+                if b"replacement payload" in bytes(data):
+                    raise OSError(errno.ENOSPC, "simulated disk full")
+                if b"original pinned content" in bytes(data):
+                    return 0
+            return real_write(fd, data)
+
+        with patch("xor_broker.executor.os.write",
+                   side_effect=fail_new_and_rollback):
+            out = broker.handle(ActionRequest(
+                "tool-a", Operation.WRITE_FILE, selected, b"replacement payload"))
+
+        self.assertEqual(out.status, OutcomeStatus.FAILED)
+        self.assertIn("rollback failed", out.error)
+        # Nothing was written before the failure, so even a failed rollback
+        # must not have truncated the original.
+        with open(selected) as fh:
+            self.assertEqual(fh.read(), "original pinned content")
 
     def test_replaced_pinned_file_is_not_truncated(self):
         selected = os.path.join(self.root, "selected.txt")

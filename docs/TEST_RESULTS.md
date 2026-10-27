@@ -6,19 +6,19 @@ mirror access, no GTK/PyGObject** (egress limited to github/pypi/npm).
 The 2026-10-27 hardening pass was re-run on Termux/Android with Python
 3.13.13 under the same unprivileged, headless constraints, because the
 Debian sandbox was unavailable. The final run in this document is from
-**2026-10-27 20:14 +0530** on that environment. Debian package indices
+**2026-10-27 21:14 +0530** on that environment. Debian package indices
 were reachable for the name/dependency preflight; an actual Debian
 `lb build` still could not run (no live-build/root Debian host).
 Everything verifiable in each environment was run; what could not run is
 listed as NOT RUN with the exact blocker. Reproduce locally with
 `tools/test.sh`.
 
-## Unit tests — PASS (79 tests)
+## Unit tests — PASS (87 tests)
 
-Latest `tools/test.sh` run (unittest fallback) → **79 passed**:
-65 broker tests (including corpus-as-test), 3 assistant-gate tests and
-11 desktop tests. Exact durations from the final run: 65 tests in
-2.316 s, 3 tests in 0.000 s, 11 tests in 0.042 s. Covers: default-deny
+Latest `tools/test.sh` run (unittest fallback) → **87 passed**:
+73 broker tests (including corpus-as-test), 3 assistant-gate tests and
+11 desktop tests. Exact durations from the final run: 73 tests in
+3.316 s, 3 tests in 0.000 s, 11 tests in 0.040 s. Covers: default-deny
 matrix, exact file/dir scoping, traversal & symlink fail-closed (incl.
 write-through leaving target untouched), selected-directory grants
 issuing `dir` scope and actually listing, replacement of a selected
@@ -35,9 +35,13 @@ limit, two-writer audit locking, fail-closed startup on a
 tampered/unreadable/symlinked chain, private manifest creation, shared
 no-follow/regular-file manifest loading (symlink and non-regular
 rejection) plus refusal to chmod a symlinked manifest target, 0600 mode
-on newly created write targets, pinned-write safety (normal write,
-replacement not truncated, deleted target not recreated, write-syscall
-failure reported), daemon singleton locking, manifest
+on newly created write targets, pinned-write safety (normal write
+preserving inode and mode, replacement not truncated, deleted target not
+recreated, target-write failure and zero-progress rollback restoring the
+original, explicit rollback-failure reporting), unpinned write failure
+preservation and temp-file cleanup, zero-progress/oversized `write()`
+rejection, mode-bit preservation, symlink-target rejection, setuid/setgid
+bits cleared on replacement, daemon singleton locking, manifest
 strictness (unsupported ops ungrantable), real Unix-socket round-trip,
 assistant disabled + read-only surface, activity filters/search/chain
 (and malformed-log fallback), and the Aurora shell core (desktop-entry
@@ -75,7 +79,7 @@ failure.
 This release-readiness pass fixed: `write_file` opened a pinned target
 with `O_TRUNC` *before* checking its inode pin, so replacing the selected
 file after approval destroyed the replacement; write opens now omit
-`O_TRUNC`, check the opened inode, and only then truncate. A vanished
+`O_TRUNC`, check the opened inode, and only then change content. A vanished
 pinned path is not recreated. It also fixed `build-iso.sh` masking a
 failed `lb build` through `tee` and potentially selecting a stale ISO,
 and corrected four invalid Debian package names (`Thunar-volman`,
@@ -83,6 +87,28 @@ and corrected four invalid Debian package names (`Thunar-volman`,
 normal/new/symlink/failed writes and the replaced/deleted pinned-write
 cases, plus the build failure/stale-artifact paths. No security
 expectation was weakened.
+
+The write-safety follow-up made write failures non-destructive in the
+reported-error case. Unpinned writes now stage bytes in a private
+same-directory temp file, fsync it, re-check that the target is still the
+same regular file (never a symlink), and rename it into place; a failed
+write, fsync or rename leaves the original file unchanged and removes the
+temp file. Pinned writes keep their inode identity: new bytes are staged,
+old bytes backed up, and the target is overwritten from offset zero and
+truncated to the new length only after all new bytes are accepted. A
+target-write failure restores the backup; a failed rollback is reported
+explicitly rather than masked as success. Zero-progress and
+oversized `os.write()` results now fail explicitly instead of looping or
+being silently accepted. Tests cover unpinned
+failure preservation, temp cleanup, zero/oversized results, mode
+preservation (including setuid/setgid clearing), symlink rejection, pinned
+inode/mode preservation, and pinned rollback on write failure and zero
+progress, including explicit reporting when rollback itself fails.
+`tools/test.sh` exited 0; the corpus still passed all 10 criteria. Not
+crash-atomic: a crash during a pinned in-place update can still leave
+partial content, unpinned replacement does not preserve ownership/ACLs/
+xattrs or hard links, and rollback needs read permission on the pinned
+file.
 
 ## Security corpus — PASS (all 10 criteria)
 

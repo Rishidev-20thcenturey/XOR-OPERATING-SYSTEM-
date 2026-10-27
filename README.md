@@ -112,8 +112,12 @@ default-deny model:
 * Selected-directory `list_dir` grants are inode-pinned; the executor
   checks the opened directory before returning its contents.
 * Pinned write targets are opened without `O_TRUNC`; the opened inode is
-  checked before truncation, so replacing or deleting a selected file
+  checked before any change, so replacing or deleting a selected file
   fails closed and leaves the replacement untouched.
+* Unpinned writes are staged in the target directory and renamed into
+  place; a failed write leaves the original content intact. Pinned writes
+  update the pinned inode in place with a backup/rollback copy, and
+  zero-progress `write()` results fail explicitly instead of looping.
 * Manifest loading shares `xor-broker init`'s no-follow and
   regular-file policy.
 * If the audit append fails after an action, the broker returns an
@@ -125,9 +129,10 @@ See [`broker/README.md`](broker/README.md),
 remaining limits and test evidence.
 
 **Limits unchanged:** execution and audit append are not crash-atomic;
-an append failure is reported but cannot undo an action. The broker is
-not system-wide confinement, and ISO build/QEMU boot verification
-remains outstanding (NOT RUN in `docs/TEST_RESULTS.md`).
+pinned-write rollback protects against reported errors, not a crash in the
+middle of an in-place update. An append failure is reported but cannot undo
+an action. The broker is not system-wide confinement, and ISO build/QEMU
+boot verification remains outstanding (NOT RUN in `docs/TEST_RESULTS.md`).
 
 The boundary mediates requests **through the broker API**. It is not
 yet system-wide syscall confinement. The complete honest model is in
@@ -150,7 +155,7 @@ traversal denied; a write pause for approval; a network send refused;
 and the tamper-evident audit trail tying it together.
 
 ```sh
-tools/test.sh       # 79 tests + 200-scenario security corpus
+tools/test.sh       # 87 tests + 200-scenario security corpus
 tools/validate.sh   # code, assets, docs inputs and live-build wiring
 ```
 
@@ -201,10 +206,13 @@ build outputs.
 
 Latest verified results (2026-10-27, Termux/Android, Python 3.13.13):
 
-* **79 unit tests passed** under unittest: 65 broker (including
+* **87 unit tests passed** under unittest: 73 broker (including
   corpus-as-test), 3 assistant-gate and 11 desktop/Activity/Aurora.
-  The write-truncation regression proves a replaced pinned file keeps
-  its contents; deleted pinned targets are not recreated.
+  Write regressions prove a replaced pinned file keeps its contents,
+  deleted pinned targets are not recreated, failed/zero-progress writes
+  preserve the original (atomic staging for unpinned writes, rollback for
+  pinned writes), temp files are cleaned up, and symlink targets fail
+  closed.
 * **200 security scenarios + 50 injection twins passed**:
   0 out-of-grant actions executed, 0 network sends, 0 unconfirmed
   writes, 0 audit/content leaks, 45/45 legitimate approved actions.

@@ -44,10 +44,23 @@ can be **denied explicitly and audited**; manifests cannot grant them.
   checks, so policy/executor races cannot redirect access. Manifest
   loading uses the same no-follow + regular-file policy as
   `xor-broker init`.
-- Pinned write targets are opened without `O_TRUNC`. The executor
-  verifies the opened inode against the file-selection pin before
-  truncating, so replacing or deleting the selected file fails closed
-  and leaves the replacement untouched.
+- Unpinned writes stage content in a private temp file in the target
+  directory, fsync it, re-check the directory entry (no symlink, same
+  inode) and rename it into place. A failed write, fsync or rename leaves
+  the original content untouched. Ordinary rwx mode bits are copied;
+  ownership, ACLs, extended attributes, setuid/setgid bits and hard-link
+  identity are not.
+- Pinned write targets are opened without `O_TRUNC` and verified against
+  the file-selection pin before any change. Pinned writes update that same
+  inode in place (renaming would break the pin and hard links): the new
+  bytes are staged and the old bytes backed up first, then written from
+  offset zero and truncated to the new length only after every new byte is
+  accepted. A reported write failure restores the original (a rollback that
+  itself fails is reported explicitly and may leave partial content). Replacing or deleting the
+  selected file fails closed, is not recreated, and leaves the replacement
+  untouched.
+- Zero-progress or oversized `write()` results fail explicitly instead of
+  looping or reporting success.
 - `max_uses` is durable in the audit log and enforced under a
   cross-process use lock, so concurrent daemon/CLI requests cannot
   exceed the limit. Counts are rebuilt by verifying the chain from the
@@ -71,6 +84,18 @@ action but before the durable append can leave an execution uncounted
 against `max_uses`; a tail truncation made before a verifier starts is
 not detectable from the log alone. An append failure is reported as
 `audit_failure` and does not return any action result data.
+
+Write-specific residuals: unpinned atomic replacement changes the inode,
+so hard links to the old file keep the old content and ownership/ACLs/
+extended attributes are not copied (ordinary rwx mode bits are; setuid/
+setgid bits are cleared). A replacement made in
+the last instant between the final identity check and `rename` can be
+overwritten, though the write cannot escape the granted directory because
+`rename` does not follow symlinks. Pinned in-place writes are rollback-
+protected against *reported* errors, not crash-atomic: a crash between
+truncate and restore can still leave partial content. Rollback needs read
+permission on the pinned file; without it the write fails before the
+target is modified. Concurrent writers to the same inode are not locked.
 
 ## Layout
 
