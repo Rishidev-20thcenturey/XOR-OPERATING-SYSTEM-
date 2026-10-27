@@ -177,6 +177,22 @@ COMMANDS: tuple[tuple[str, str], ...] = (
         "cat /tmp/xfdesktop-restart.log 2>&1 || true",
     ),
     (
+        "wallpaper-png",
+        "for m in monitor0 monitor1; do "
+        "for p in last-image last-single-image image-path; do "
+        "runuser -u user -- env DISPLAY=:0 XDG_RUNTIME_DIR=/run/user/1000 "
+        "xfconf-query -c xfce4-desktop -p /backdrop/screen0/$m/$p "
+        "-s /usr/share/xor/wallpapers/xor-midnight-x.png "
+        "--create -t string >/dev/null 2>&1 || true; done; done; "
+        "runuser -u user -- env DISPLAY=:0 XDG_RUNTIME_DIR=/run/user/1000 "
+        "xfdesktop --quit 2>&1 || true; sleep 1; "
+        "runuser -u user -- env DISPLAY=:0 XDG_RUNTIME_DIR=/run/user/1000 "
+        "sh -c 'nohup xfdesktop --enable-debug >/tmp/xfdesktop-png.log 2>&1 &' "
+        "2>&1 || true; sleep 5; "
+        "cat /tmp/xfdesktop-png.log 2>&1 || true; "
+        "ps -ef | grep '[x]fdesktop' || true",
+    ),
+    (
         "session-env",
         "pid=$(pgrep -u user -n xfce4-session); "
         "test -n \"$pid\" && tr '\\0' '\\n' < /proc/$pid/environ | "
