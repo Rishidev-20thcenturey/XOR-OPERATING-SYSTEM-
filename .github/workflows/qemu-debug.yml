@@ -2,8 +2,8 @@ name: QEMU boot diagnostics (manual)
 
 # Diagnostic path only.  This workflow consumes an ISO image that was already
 # built by iso-build.yml, runs a bounded QEMU boot, and captures guest-side
-# LightDM/Xorg state through QEMU's guest agent.  It is deliberately not part
-# of the normal CI or release gate.
+# LightDM/Xorg and XOR-session state through QEMU's guest agent.  It is
+# deliberately not part of the normal CI or release gate.
 on:
   # workflow_dispatch is unavailable until a workflow exists on the default
   # branch; this review-branch-only push trigger lets us run the diagnostic

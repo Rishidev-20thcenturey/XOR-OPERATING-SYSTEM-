@@ -66,6 +66,65 @@ COMMANDS: tuple[tuple[str, str], ...] = (
         "processes",
         "ps -ef 2>&1 || true",
     ),
+    (
+        "autostart",
+        "echo HOME=$HOME; id; echo DISPLAY=$DISPLAY; "
+        "echo XDG_CURRENT_DESKTOP=$XDG_CURRENT_DESKTOP; "
+        "echo '--- system autostart ---'; ls -la /etc/xdg/autostart 2>&1 || true; "
+        "cat /etc/xdg/autostart/xor-shell-autostart.desktop 2>&1 || true; "
+        "cat /etc/xdg/autostart/xor-broker-autostart.desktop 2>&1 || true; "
+        "echo '--- user autostart ---'; "
+        "ls -la /home/user/.config/autostart 2>&1 || true; "
+        "cat /home/user/.config/autostart/*.desktop 2>&1 || true",
+    ),
+    (
+        "xsession-errors",
+        "cat /home/user/.xsession-errors 2>&1 || true; "
+        "ls -la /home/user 2>&1 || true",
+    ),
+    (
+        "user-journal",
+        "runuser -u user -- env XDG_RUNTIME_DIR=/run/user/1000 "
+        "journalctl --user -b --no-pager -n 400 2>&1 || true; "
+        "runuser -u user -- env XDG_RUNTIME_DIR=/run/user/1000 "
+        "systemctl --user --no-pager --failed 2>&1 || true",
+    ),
+    (
+        "xfce-config",
+        "find /home/user/.config/xfce4 -maxdepth 5 -type f "
+        "-printf '%p %s bytes\\n' 2>&1 || true; "
+        "echo '--- user desktop xml ---'; "
+        "cat /home/user/.config/xfce4/xfconf/xfce-perchannel-xml/"
+        "xfce4-desktop.xml 2>&1 || true; "
+        "echo '--- skel desktop xml ---'; "
+        "cat /etc/skel/.config/xfce4/xfconf/xfce-perchannel-xml/"
+        "xfce4-desktop.xml 2>&1 || true",
+    ),
+    (
+        "xfce-props",
+        "runuser -u user -- env DISPLAY=:0 XDG_RUNTIME_DIR=/run/user/1000 "
+        "xfconf-query -c xfce4-desktop -l 2>&1 || true; "
+        "runuser -u user -- env DISPLAY=:0 XDG_RUNTIME_DIR=/run/user/1000 "
+        "xfconf-query -c xfce4-desktop "
+        "-p /backdrop/screen0/monitor0/workspace0/last-image 2>&1 || true; "
+        "runuser -u user -- env DISPLAY=:0 XDG_RUNTIME_DIR=/run/user/1000 "
+        "xrandr --query 2>&1 || true",
+    ),
+    (
+        "session-env",
+        "pid=$(pgrep -u user -n xfce4-session); "
+        "test -n \"$pid\" && tr '\\0' '\\n' < /proc/$pid/environ | "
+        "grep -E '^(DISPLAY|XDG_CURRENT_DESKTOP|HOME|PATH)=' | sort || true",
+    ),
+    (
+        "xor-runtime",
+        "echo '--- binaries ---'; command -v xor-shell xor-shell-autostart "
+        "2>&1 || true; ls -l /usr/local/bin/xor-* 2>&1 || true; "
+        "echo '--- status ---'; "
+        "runuser -u user -- env "
+        "PYTHONPATH=/usr/local/lib/xor-desktop:/usr/local/lib/xor-broker "
+        "python3 -m xor_shell --status-json 2>&1 || true",
+    ),
 )
 
 
