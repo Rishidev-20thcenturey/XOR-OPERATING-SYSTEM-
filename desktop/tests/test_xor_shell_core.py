@@ -5,6 +5,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "broker", "src"))
@@ -148,6 +149,29 @@ class TestConfigAndStatus(unittest.TestCase):
         self.assertIn("XOR Control Centre", text)
         self.assertIn("Aurora", text)
         self.assertIn("Broker log:", text)
+
+
+class TestWallpaperApplication(unittest.TestCase):
+    def test_applies_single_and_workspace_keys(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            wallpaper = Path(tmp) / "wallpaper.jpg"
+            wallpaper.write_bytes(b"\xff\xd8\xff")
+            with patch.object(control_center.shutil, "which",
+                              return_value="/usr/bin/xfconf-query"), \
+                    patch.object(control_center.subprocess, "run") as run:
+                run.return_value.returncode = 0
+                self.assertTrue(control_center.apply_xfce_wallpaper(wallpaper))
+                props = []
+                for call in run.call_args_list:
+                    argv = call.args[0]
+                    if "-p" in argv:
+                        props.append(argv[argv.index("-p") + 1])
+                self.assertIn("/backdrop/screen0/monitor0/last-image", props)
+                self.assertIn("/backdrop/screen0/monitor0/last-single-image", props)
+                self.assertIn("/backdrop/screen0/monitor0/image-path", props)
+                self.assertIn("/backdrop/screen0/monitor0/image-show", props)
+                self.assertIn("/backdrop/screen0/monitor0/workspace0/last-image", props)
+                self.assertIn("/backdrop/screen0/monitor0/workspace1/last-image", props)
 
 
 if __name__ == "__main__":

@@ -41,6 +41,7 @@ def apply_xfce_wallpaper(wallpaper_path: Path) -> bool:
     props = (
         "/backdrop/screen0/monitor0/last-image",
         "/backdrop/screen0/monitor0/last-single-image",
+        "/backdrop/screen0/monitor0/image-path",
         "/backdrop/screen0/monitor0/workspace0/last-image",
         "/backdrop/screen0/monitor0/workspace1/last-image",
     )
@@ -58,7 +59,17 @@ def apply_xfce_wallpaper(wallpaper_path: Path) -> bool:
                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                 check=False)
         ok = ok and result.returncode == 0
-    return ok
+    show_prop = "/backdrop/screen0/monitor0/image-show"
+    result = subprocess.run(
+        ["xfconf-query", "-c", "xfce4-desktop", "-p", show_prop,
+         "-s", "true", "--create", "-t", "bool"],
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+    if result.returncode != 0:
+        result = subprocess.run(
+            ["xfconf-query", "-c", "xfce4-desktop", "-p", show_prop,
+             "-s", "true"],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+    return ok and result.returncode == 0
 
 
 def audit_summary(audit_path: Optional[str] = None) -> dict:

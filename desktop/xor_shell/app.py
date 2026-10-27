@@ -33,8 +33,10 @@ from .core import (
     group_apps,
     load_config,
     panel_gradient_css,
+    resolve_wallpaper,
     search_apps,
 )
+from .control_center import apply_xfce_wallpaper
 
 
 def _load_gtk():
@@ -82,6 +84,7 @@ class XorShell:
         self._dock_recentring = False
 
         self._install_css()
+        self._apply_wallpaper()
         self.launcher = self._build_launcher()
         self.command_centre = self._build_command_centre()
         if not launcher_only:
@@ -121,6 +124,17 @@ class XorShell:
         screen = self.Gdk.Screen.get_default()
         self.Gtk.StyleContext.add_provider_for_screen(
             screen, provider, self.Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
+
+    def _apply_wallpaper(self):
+        """Apply the configured backdrop after XFCE has migrated its keys.
+
+        xfdesktop's first-login migration can reset the single-image keys to
+        desktop-base defaults even when /etc/skel supplies XOR values.  The
+        running shell is the reliable owner of the live-session backdrop.
+        """
+        wallpaper = resolve_wallpaper(self.config.wallpaper)
+        if wallpaper:
+            apply_xfce_wallpaper(wallpaper)
 
     # ------------------------------------------------------------ helpers
     def _shell_window(self, title: str, dock_hint: bool = True):
