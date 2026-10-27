@@ -5,6 +5,14 @@ name: QEMU boot diagnostics (manual)
 # LightDM/Xorg state through QEMU's guest agent.  It is deliberately not part
 # of the normal CI or release gate.
 on:
+  # workflow_dispatch is unavailable until a workflow exists on the default
+  # branch; this review-branch-only push trigger lets us run the diagnostic
+  # without touching main.
+  push:
+    branches:
+      - 'review/ac48e68-hardening'
+    paths:
+      - '.github/workflows/qemu-debug.yml'
   workflow_dispatch:
     inputs:
       run_id:
@@ -45,11 +53,11 @@ jobs:
     env:
       DEBIAN_FRONTEND: noninteractive
       GH_TOKEN: ${{ github.token }}
-      RUN_ID: ${{ inputs.run_id }}
-      ISO_ARTIFACT: ${{ inputs.iso_artifact }}
-      BUILD_ARTIFACT: ${{ inputs.build_artifact }}
-      VGA_MODE: ${{ inputs.vga }}
-      WAIT_SECONDS: ${{ inputs.wait_seconds }}
+      RUN_ID: ${{ inputs.run_id || '40542700041' }}
+      ISO_ARTIFACT: ${{ inputs.iso_artifact || 'xor-iso-image-40542700041' }}
+      BUILD_ARTIFACT: ${{ inputs.build_artifact || 'xor-build-evidence-40542700041' }}
+      VGA_MODE: ${{ inputs.vga || 'virtio-none' }}
+      WAIT_SECONDS: ${{ inputs.wait_seconds || '120' }}
 
     steps:
       - name: Checkout review branch
