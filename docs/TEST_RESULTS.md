@@ -6,19 +6,19 @@ mirror access, no GTK/PyGObject** (egress limited to github/pypi/npm).
 The 2026-10-27 hardening pass was re-run on Termux/Android with Python
 3.13.13 under the same unprivileged, headless constraints, because the
 Debian sandbox was unavailable. The final run in this document is from
-**2026-10-27 21:27 +0530** on that environment. Debian package indices
+**2026-10-27 21:37 +0530** on that environment. Debian package indices
 were reachable for the name/dependency preflight; an actual Debian
 `lb build` still could not run (no live-build/root Debian host).
 Everything verifiable in each environment was run; what could not run is
 listed as NOT RUN with the exact blocker. Reproduce locally with
 `tools/test.sh`.
 
-## Unit tests — PASS (90 tests)
+## Unit tests — PASS (94 tests)
 
-Latest `tools/test.sh` run (unittest fallback) → **90 passed**:
-76 broker tests (including corpus-as-test), 3 assistant-gate tests and
-11 desktop tests. Exact durations from the final run: 76 tests in
-3.130 s, 3 tests in 0.000 s, 11 tests in 0.056 s. Covers: default-deny
+Latest `tools/test.sh` run (unittest fallback) → **94 passed**:
+80 broker tests (including corpus-as-test), 3 assistant-gate tests and
+11 desktop tests. Exact durations from the final run: 80 tests in
+2.422 s, 3 tests in 0.000 s, 11 tests in 0.031 s. Covers: default-deny
 matrix, exact file/dir scoping, traversal & symlink fail-closed (incl.
 write-through leaving target untouched), selected-directory grants
 issuing `dir` scope and actually listing, replacement of a selected
@@ -42,7 +42,10 @@ original, explicit rollback-failure reporting), unpinned write failure
 preservation and staging cleanup, private `0700` staging (file created
 `0600`, destination mode applied inside it),
 staging-path symlink substitution not redirecting the FD-anchored rename,
-staged-source symlink replacement rejection, zero-progress/oversized
+staged-source symlink replacement rejection, setup-failure cleanup that
+preserves substituted directories and symlinks and removes only the exact
+created directory, orphan preference in unsafe shared parents,
+zero-progress/oversized
 `write()` rejection, mode-bit preservation, symlink-target rejection,
 setuid/setgid bits cleared on replacement, daemon singleton locking,
 manifest
@@ -136,6 +139,21 @@ parent can rename the staging entry, causing a reported failure or an
 empty-directory leftover, but cannot read or substitute the staged bytes
 because the held directory remains `0700`; and a last-instant destination
 replacement between the final target check and `rename` remains.
+
+The staging-cleanup follow-up captured the staging directory identity
+immediately after `mkdir` and made setup-failure cleanup identity-based:
+the entry is removed only while it still names that exact directory, is a
+directory, is owned by this effective UID, and the parent is safe from
+cross-user renames. A substituted entry is left untouched. Tests simulate
+an entry swap during setup (the replacement survives and the original is
+left orphaned), a symlink substitution (left in place, target untouched),
+ordinary setup failure (the exact created directory is removed), and a
+group/other-writable non-sticky parent (the empty directory is left rather
+than risking deletion of another entry). The check-to-`rmdir`
+window is not atomically closable portably; in unsafe shared parents the
+broker therefore prefers the orphan. A microscopic residual
+remains if parent permissions change between the safety check and `rmdir`,
+and same-UID processes remain outside the cross-user boundary.
 
 ## Security corpus — PASS (all 10 criteria)
 

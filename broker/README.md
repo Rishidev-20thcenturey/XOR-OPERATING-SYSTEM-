@@ -51,13 +51,15 @@ can be **denied explicitly and audited**; manifests cannot grant them.
   owner-verified directory, so confidentiality comes from the `0700`
   directory rather than the file mode. Another user cannot traverse the
   directory, read the staged bytes or substitute the source entry; a
-  pathname swap of
-  the staging directory itself cannot redirect the FD-anchored `rename`.
-  The executor also re-checks the staged file's inode as defence in depth.
-  A failed write, fsync or rename leaves the original content untouched
-  and removes the staging files. Ordinary rwx mode bits are copied;
-  ownership, ACLs, extended attributes, setuid/setgid bits and hard-link
-  identity are not.
+  pathname swap of the staging directory itself cannot redirect the
+  FD-anchored `rename`. The executor also re-checks the staged file's inode
+  as defence in depth. Setup-failure cleanup captures the directory identity
+  immediately after `mkdir` and removes the name only while it still names
+  that exact directory; a substituted entry is never removed. A failed
+  write, fsync or rename leaves the original content untouched and cleans
+  up staging where that can be done without a cross-user race. Ordinary rwx
+  mode bits are copied; ownership, ACLs, extended attributes, setuid/setgid
+  bits and hard-link identity are not.
 - Pinned write targets are opened without `O_TRUNC` and verified against
   the file-selection pin before any change. Pinned writes update that same
   inode in place (renaming would break the pin and hard links): the new
@@ -105,8 +107,13 @@ last-instant same-UID source swap. Another user with write access to a
 non-sticky parent can rename or remove the staging directory entry, which
 can cause a reported failure or leave an empty directory behind, but
 cannot read the staged bytes or substitute the source because the
-directory remains `0700` and rename uses the held FD. A destination
-replacement made in the last instant between the final identity check and
+directory remains `0700` and rename uses the held FD. Setup-failure
+cleanup verifies the entry identity at removal time; in a shared parent
+where another user could still swap the name between that check and
+`rmdir` (group/other-writable without a trusted sticky owner), the broker
+prefers leaving the empty directory over risking deletion of another
+entry. A destination replacement made in the last instant between the
+final identity check and
 `rename` can be overwritten, though the write cannot escape the granted
 directory because `rename` does not follow symlinks. Pinned in-place
 writes are rollback-protected against *reported* errors, not crash-atomic:

@@ -305,6 +305,114 @@ class TestConfirmationFlow(BrokerCase):
         self.assertEqual(self._read(victim), "victim content")
         self.assertEqual(self._temp_files(), [])
 
+    def test_setup_failure_does_not_delete_substituted_entry(self):
+        parent_fd = os.open(self.root, os.O_RDONLY | os.O_DIRECTORY)
+        self.addCleanup(os.close, parent_fd)
+        real_open = os.open
+        observed = {}
+
+        def fail_after_substitution(path, flags, *args, **kwargs):
+            if (isinstance(path, str)
+                    and path.startswith(".xor-write-dir-")
+                    and kwargs.get("dir_fd") == parent_fd):
+                stage_path = os.path.join(self.root, path)
+                os.rename(stage_path, os.path.join(self.root,
+                                                   "original-stage"))
+                os.mkdir(stage_path, 0o700)
+                observed["name"] = path
+                observed["replacement"] = os.stat(stage_path)
+                raise OSError(errno.EACCES, "simulated setup failure")
+            return real_open(path, flags, *args, **kwargs)
+
+        with patch("xor_broker.executor.os.open",
+                   side_effect=fail_after_substitution):
+            with self.assertRaises(OSError):
+                executor._open_stage_dir(parent_fd)
+
+        name = observed["name"]
+        current = os.stat(os.path.join(self.root, name),
+                          follow_symlinks=False)
+        replacement = observed["replacement"]
+        self.assertTrue(stat.S_ISDIR(current.st_mode))
+        self.assertEqual((current.st_dev, current.st_ino),
+                         (replacement.st_dev, replacement.st_ino))
+        self.assertTrue(os.path.isdir(
+            os.path.join(self.root, "original-stage")))
+
+    def test_setup_failure_does_not_follow_substituted_symlink(self):
+        parent_fd = os.open(self.root, os.O_RDONLY | os.O_DIRECTORY)
+        self.addCleanup(os.close, parent_fd)
+        real_open = os.open
+        target = os.path.join(self.root, "symlink-target")
+        os.mkdir(target)
+        observed = {}
+
+        def fail_after_symlink(path, flags, *args, **kwargs):
+            if (isinstance(path, str)
+                    and path.startswith(".xor-write-dir-")
+                    and kwargs.get("dir_fd") == parent_fd):
+                stage_path = os.path.join(self.root, path)
+                os.rename(stage_path, os.path.join(self.root,
+                                                   "original-stage"))
+                os.symlink(target, stage_path)
+                observed["name"] = path
+                raise OSError(errno.EACCES, "simulated setup failure")
+            return real_open(path, flags, *args, **kwargs)
+
+        with patch("xor_broker.executor.os.open",
+                   side_effect=fail_after_symlink):
+            with self.assertRaises(OSError):
+                executor._open_stage_dir(parent_fd)
+
+        stage_path = os.path.join(self.root, observed["name"])
+        self.assertTrue(os.path.islink(stage_path))
+        self.assertTrue(os.path.isdir(target))
+
+    def test_setup_failure_removes_own_unsubstituted_entry(self):
+        parent_fd = os.open(self.root, os.O_RDONLY | os.O_DIRECTORY)
+        self.addCleanup(os.close, parent_fd)
+        real_open = os.open
+
+        def fail_without_substitution(path, flags, *args, **kwargs):
+            if (isinstance(path, str)
+                    and path.startswith(".xor-write-dir-")
+                    and kwargs.get("dir_fd") == parent_fd):
+                raise OSError(errno.EMFILE, "simulated open failure")
+            return real_open(path, flags, *args, **kwargs)
+
+        with patch("xor_broker.executor.os.open",
+                   side_effect=fail_without_substitution):
+            with self.assertRaises(OSError):
+                executor._open_stage_dir(parent_fd)
+
+        leftovers = [name for name in os.listdir(self.root)
+                     if name.startswith(".xor-write-dir-")]
+        self.assertEqual(leftovers, [])
+
+    def test_setup_failure_prefers_orphan_in_unsafe_parent(self):
+        os.chmod(self.root, 0o777)
+        parent_fd = os.open(self.root, os.O_RDONLY | os.O_DIRECTORY)
+        real_open = os.open
+        try:
+            def fail_without_substitution(path, flags, *args, **kwargs):
+                if (isinstance(path, str)
+                        and path.startswith(".xor-write-dir-")
+                        and kwargs.get("dir_fd") == parent_fd):
+                    raise OSError(errno.EMFILE, "simulated open failure")
+                return real_open(path, flags, *args, **kwargs)
+
+            with patch("xor_broker.executor.os.open",
+                       side_effect=fail_without_substitution):
+                with self.assertRaises(OSError):
+                    executor._open_stage_dir(parent_fd)
+
+            leftovers = [name for name in os.listdir(self.root)
+                         if name.startswith(".xor-write-dir-")]
+            self.assertEqual(len(leftovers), 1)
+        finally:
+            os.close(parent_fd)
+            os.chmod(self.root, 0o700)
+
     def test_write_preserves_mode_bits(self):
         broker, paths, _ = self.make(ScriptedConfirmation(default=True))
         os.chmod(paths["out.txt"], 0o640)

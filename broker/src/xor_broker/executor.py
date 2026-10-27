@@ -303,9 +303,10 @@ def _open_stage_dir(parent_fd: int):
     """Create and open a private 0700 staging directory in ``parent_fd``.
 
     Staging inside the target's parent keeps the final rename on the same
-    filesystem.  The directory is created with an unguessable name and then
-    re-opened with ``O_NOFOLLOW``; owner and mode are verified so a raced
-    replacement (or permissive default ACL) cannot expose the staged bytes.
+    filesystem.  The directory's identity is captured immediately after
+    ``mkdir`` and re-checked through the opened FD.  Setup-failure cleanup
+    removes the name only while it still resolves to that exact directory;
+    otherwise it is left as an orphan rather than deleting another entry.
     """
     for _ in range(16):
         name = f"{_TEMP_PREFIX}dir-{os.getpid()}-{secrets.token_hex(8)}"
@@ -313,6 +314,19 @@ def _open_stage_dir(parent_fd: int):
             os.mkdir(name, 0o700, dir_fd=parent_fd)
         except FileExistsError:
             continue
+
+        # Capture identity as early as possible.  A different user could
+        # already have swapped the entry, so only trust a directory owned by
+        # this effective UID.
+        created = _lstat_target(parent_fd, name)
+        if created is None:
+            # The entry vanished before its identity could be captured.
+            # Nothing verifiable to clean up; try a fresh name.
+            continue
+        if not stat.S_ISDIR(created.st_mode) or created.st_uid != os.geteuid():
+            raise OSError(errno.EPERM, "unsafe staging directory")
+        created_id = (created.st_dev, created.st_ino)
+
         fd = None
         try:
             fd = os.open(
@@ -320,6 +334,9 @@ def _open_stage_dir(parent_fd: int):
                 dir_fd=parent_fd,
             )
             st = os.fstat(fd)
+            if (st.st_dev, st.st_ino) != created_id:
+                raise OSError(errno.EPERM,
+                              "staging directory changed during setup")
             if not stat.S_ISDIR(st.st_mode) or st.st_uid != os.geteuid():
                 raise OSError(errno.EPERM, "unsafe staging directory")
             if st.st_mode & 0o077:
@@ -327,8 +344,11 @@ def _open_stage_dir(parent_fd: int):
             return fd, name
         except BaseException:
             if fd is not None:
-                os.close(fd)
-            _rmdir_quiet(parent_fd, name)
+                try:
+                    os.close(fd)
+                except OSError:
+                    pass
+            _rmdir_stage_quiet(parent_fd, name, created_id)
             raise
     raise OSError(errno.EEXIST, "could not allocate staging directory")
 
@@ -421,8 +441,15 @@ def _rmdir_quiet(parent_fd: int, name: str) -> None:
 
 
 def _rmdir_stage_quiet(parent_fd: int, name: str, expected: tuple) -> None:
-    """Remove the staging directory only if its name still names our dir."""
+    """Remove the staging directory only while it is still verifiably ours.
+
+    The identity check and ``rmdir`` cannot be made atomic portably.  If
+    other users can rename entries in the parent, or a sticky parent is
+    owned by an untrusted user, leave the empty directory instead of risking
+    deletion of a substituted entry.
+    """
     try:
+        parent_st = os.fstat(parent_fd)
         st = os.stat(name, dir_fd=parent_fd, follow_symlinks=False)
     except OSError:
         return
@@ -430,7 +457,26 @@ def _rmdir_stage_quiet(parent_fd: int, name: str, expected: tuple) -> None:
         return
     if (st.st_dev, st.st_ino) != expected:
         return
+    if st.st_uid != os.geteuid():
+        return
+    if not _parent_allows_rmdir(parent_st):
+        return
     _rmdir_quiet(parent_fd, name)
+
+
+def _parent_allows_rmdir(parent_st) -> bool:
+    """Whether a name in this parent can be removed without a cross-user race.
+
+    Without write permission for group/other, other users cannot rename our
+    entry.  In a sticky directory they cannot remove or rename entries they
+    do not own, unless they own the directory itself; an untrusted directory
+    owner is therefore not treated as safe.
+    """
+    if not (parent_st.st_mode & 0o022):
+        return True
+    if not (parent_st.st_mode & stat.S_ISVTX):
+        return False
+    return parent_st.st_uid in (os.geteuid(), 0)
 
 
 def _fail(request, capability, message: str) -> Outcome:
