@@ -126,6 +126,40 @@ COMMANDS: tuple[tuple[str, str], ...] = (
         "grep -Ei 'xfdesktop|backdrop|wallpaper|image' | tail -n 120 || true",
     ),
     (
+        "wallpaper-probe",
+        "echo '--- JPEG loader ---'; "
+        "gdk-pixbuf-query-loaders 2>&1 | grep -i jpeg || true; "
+        "runuser -u user -- env DISPLAY=:0 XDG_RUNTIME_DIR=/run/user/1000 "
+        "python3 -c \"import gi; gi.require_version('GdkPixbuf','2.0'); "
+        "from gi.repository import GdkPixbuf; "
+        "p=GdkPixbuf.Pixbuf.new_from_file("
+        "'/usr/share/xor/wallpapers/xor-royal-aurora.jpg'); "
+        "print('JPEG_OK', p.get_width(), p.get_height())\" 2>&1 || true; "
+        "echo '--- monitor1 props ---'; "
+        "runuser -u user -- env DISPLAY=:0 XDG_RUNTIME_DIR=/run/user/1000 "
+        "xfconf-query -c xfce4-desktop "
+        "-p /backdrop/screen0/monitor1/last-image 2>&1 || true",
+    ),
+    (
+        "wallpaper-set-all",
+        "for m in monitor0 monitor1; do "
+        "for p in last-image last-single-image image-path; do "
+        "runuser -u user -- env DISPLAY=:0 XDG_RUNTIME_DIR=/run/user/1000 "
+        "xfconf-query -c xfce4-desktop -p /backdrop/screen0/$m/$p "
+        "-s /usr/share/xor/wallpapers/xor-royal-aurora.jpg "
+        "--create -t string >/dev/null 2>&1 || "
+        "runuser -u user -- env DISPLAY=:0 XDG_RUNTIME_DIR=/run/user/1000 "
+        "xfconf-query -c xfce4-desktop -p /backdrop/screen0/$m/$p "
+        "-s /usr/share/xor/wallpapers/xor-royal-aurora.jpg "
+        ">/dev/null 2>&1 || true; done; "
+        "runuser -u user -- env DISPLAY=:0 XDG_RUNTIME_DIR=/run/user/1000 "
+        "xfconf-query -c xfce4-desktop "
+        "-p /backdrop/screen0/$m/image-show -s true "
+        "--create -t bool >/dev/null 2>&1 || true; done; "
+        "runuser -u user -- env DISPLAY=:0 XDG_RUNTIME_DIR=/run/user/1000 "
+        "xfdesktop --reload 2>&1 || true; sleep 3",
+    ),
+    (
         "session-env",
         "pid=$(pgrep -u user -n xfce4-session); "
         "test -n \"$pid\" && tr '\\0' '\\n' < /proc/$pid/environ | "
