@@ -96,9 +96,35 @@ flowchart LR
 * Writes require a **single-use, digest-bound, 120-second** approval.
 * Delete, network-send and process-exec exist in the API only to be
   **denied and audited**; manifests cannot grant them.
-* Every request creates one SHA-256 hash-chained audit record with
-  metadata/digests — never raw file content.
+* Every request attempts one SHA-256 hash-chained audit record with
+  metadata/digests — never raw file content; an append failure is
+  reported explicitly.
 * Hostile document text is never consulted by policy.
+
+### Follow-up hardening
+
+The latest review follow-up strengthened the broker without changing the
+default-deny model:
+
+* Audit-chain verification and `max_uses` counts are rebuilt from the
+  same locked file descriptor. Malformed or hash-invalid records,
+  replaced/deleted log paths and in-process tail truncation fail closed.
+* Selected-directory `list_dir` grants are inode-pinned; the executor
+  checks the opened directory before returning its contents.
+* Manifest loading shares `xor-broker init`'s no-follow and
+  regular-file policy.
+* If the audit append fails after an action, the broker returns an
+  explicit `audit_failure` and no result data instead of a false success.
+
+See [`broker/README.md`](broker/README.md),
+[`docs/THREAT_MODEL.md`](docs/THREAT_MODEL.md) and
+[`docs/TEST_RESULTS.md`](docs/TEST_RESULTS.md) for the exact guarantees,
+remaining limits and test evidence.
+
+**Limits unchanged:** execution and audit append are not crash-atomic;
+an append failure is reported but cannot undo an action. The broker is
+not system-wide confinement, and ISO build/QEMU boot verification
+remains outstanding (NOT RUN in `docs/TEST_RESULTS.md`).
 
 The boundary mediates requests **through the broker API**. It is not
 yet system-wide syscall confinement. The complete honest model is in
@@ -164,15 +190,17 @@ Each build writes the ISO SHA-256 and `BUILD-MANIFEST.txt`. We do
 
 ## ✅ Evidence, not promises
 
-Latest sandbox results:
+Latest verified results (2026-10-27, Termux/Android, Python 3.13.13):
 
-* **62 unit tests passed** under unittest (broker, assistant gate,
-  Activity and Aurora cores).
+* **75 unit tests passed** under unittest: 61 broker (including
+  corpus-as-test), 3 assistant-gate and 11 desktop/Activity/Aurora.
 * **200 security scenarios + 50 injection twins passed**:
   0 out-of-grant actions executed, 0 network sends, 0 unconfirmed
   writes, 0 audit/content leaks, 45/45 legitimate approved actions.
 * Static validation passes across 34 Python files, CSS/logo/wallpapers,
-  desktop entries, shell scripts and live-build wiring; pyflakes clean.
+  desktop entries, shell scripts and live-build wiring. Pyflakes and
+  ShellCheck were **not installed** in the latest run, so both were
+  skipped; no lint-clean claim is made for this run.
 * **NOT RUN:** ISO build, QEMU boot and GTK behaviour in the sandbox
   (`lb`/QEMU/KVM/display unavailable). Commands and exact blockers are
   in [`docs/TEST_RESULTS.md`](docs/TEST_RESULTS.md).
