@@ -1,6 +1,6 @@
 name: QEMU boot diagnostics (manual)
 
-# Diagnostic run: inspect xfdesktop's reload/restart behavior.
+# Diagnostic run: test the PNG backdrop and xfdesktop debug output.
 
 # Diagnostic path only.  This workflow consumes an ISO image that was already
 # built by iso-build.yml, runs a bounded QEMU boot, and captures guest-side
