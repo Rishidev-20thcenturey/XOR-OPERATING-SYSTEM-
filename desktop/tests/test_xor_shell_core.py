@@ -158,6 +158,8 @@ class TestWallpaperApplication(unittest.TestCase):
             wallpaper.write_bytes(b"\xff\xd8\xff")
             with patch.object(control_center.shutil, "which",
                               return_value="/usr/bin/xfconf-query"), \
+                    patch.object(control_center, "_xfce_monitor_names",
+                                 return_value=["monitorVirtual-1"]), \
                     patch.object(control_center.subprocess, "run") as run:
                 run.return_value.returncode = 0
                 self.assertTrue(control_center.apply_xfce_wallpaper(wallpaper))
@@ -172,6 +174,14 @@ class TestWallpaperApplication(unittest.TestCase):
                 self.assertIn("/backdrop/screen0/monitor0/image-show", props)
                 self.assertIn("/backdrop/screen0/monitor0/workspace0/last-image", props)
                 self.assertIn("/backdrop/screen0/monitor0/workspace1/last-image", props)
+                self.assertIn(
+                    "/backdrop/screen0/monitorVirtual-1/last-image", props)
+                self.assertIn(
+                    "/backdrop/screen0/monitorVirtual-1/workspace0/last-image",
+                    props)
+                self.assertIn(
+                    "/backdrop/screen0/monitorVirtual-1/workspace0/image-style",
+                    props)
                 commands = [call.args[0] for call in run.call_args_list]
                 self.assertIn(["xfdesktop", "--reload"], commands)
 
