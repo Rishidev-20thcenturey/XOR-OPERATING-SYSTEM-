@@ -127,7 +127,9 @@ def open_scoped_file(scope: ResourceScope, canonical_target: str, write: bool) -
     flags = os.O_NOFOLLOW
     flags |= (os.O_WRONLY | os.O_CREAT | os.O_TRUNC) if write else os.O_RDONLY
     try:
-        return os.open(components[-1], flags, 0o644, dir_fd=parent_fd)
+        # Newly created files are private by default.  Existing files keep
+        # their mode; the user can loosen it deliberately after the write.
+        return os.open(components[-1], flags, 0o600, dir_fd=parent_fd)
     except OSError as exc:
         if exc.errno == errno.ELOOP:
             raise PathEscapeError(f"final component is a symlink: {components[-1]}") from exc

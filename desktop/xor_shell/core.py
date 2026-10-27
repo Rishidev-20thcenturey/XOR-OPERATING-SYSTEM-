@@ -14,6 +14,7 @@ import os
 import platform
 import shlex
 import socket
+from collections.abc import Mapping as MappingABC
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
@@ -247,7 +248,7 @@ class ShellConfig:
     @classmethod
     def from_dict(cls, data: Mapping[str, object] | None) -> "ShellConfig":
         cfg = cls()
-        if not data:
+        if not isinstance(data, MappingABC) or not data:
             return cfg
         if str(data.get("accent", "")) in ACCENTS:
             cfg.accent = str(data["accent"])
@@ -290,8 +291,24 @@ def load_config(path: str | Path | None = None) -> ShellConfig:
     target = Path(path) if path else config_path()
     try:
         return ShellConfig.from_dict(json.loads(target.read_text(encoding="utf-8")))
-    except (OSError, json.JSONDecodeError, TypeError):
+    except (OSError, json.JSONDecodeError, TypeError, ValueError, AttributeError):
         return ShellConfig()
+
+
+def panel_gradient_css(opacity: float) -> str:
+    """Return the panel background declaration for a validated opacity.
+
+    Kept here (rather than in the GTK module) so the appearance control
+    has a headless-tested implementation instead of a saved-but-unused
+    value.
+    """
+    opacity = max(0.52, min(0.96, float(opacity)))
+    return (
+        "background-image: linear-gradient(135deg, "
+        f"rgba(10, 16, 30, {opacity:.2f}), "
+        f"rgba(21, 22, 48, {max(0.0, opacity - 0.04):.2f}) 52%, "
+        f"rgba(6, 38, 45, {max(0.0, opacity - 0.02):.2f}));"
+    )
 
 
 def save_config(cfg: ShellConfig, path: str | Path | None = None) -> Path:
@@ -348,7 +365,11 @@ def parse_battery(root: str | Path = "/sys/class/power_supply") -> BatteryStatus
     base = Path(root)
     if not base.exists():
         return BatteryStatus()
-    for supply in sorted(base.glob("BAT*")):
+    try:
+        supplies = sorted(base.glob("BAT*"))
+    except OSError:
+        return BatteryStatus()
+    for supply in supplies:
         try:
             percent = int((supply / "capacity").read_text(encoding="utf-8").strip())
             state = (supply / "status").read_text(encoding="utf-8").strip()
@@ -379,8 +400,12 @@ def network_label(root: str | Path = "/sys/class/net") -> str:
     base = Path(root)
     if not base.exists():
         return "Offline"
+    try:
+        interfaces = sorted(base.iterdir())
+    except OSError:
+        return "Offline"
     active: List[str] = []
-    for iface in sorted(base.iterdir()):
+    for iface in interfaces:
         if iface.name == "lo":
             continue
         try:

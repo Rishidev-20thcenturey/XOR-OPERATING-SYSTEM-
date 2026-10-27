@@ -20,10 +20,17 @@ from .policy import PolicyEngine
 
 def build_broker(manifest_path: str, audit_path: str, provider=None) -> Broker:
     capabilities = load_manifest(manifest_path)
+    audit = AuditLog(audit_path)
+    # max_uses must survive a daemon restart / a one-shot CLI request.
+    # The audit log is the durable evidence of successful executions, so
+    # derive the counters from it instead of keeping them only in memory.
+    counts = audit.executed_counts_by_capability()
+    for capability in capabilities:
+        capability.uses = counts.get(capability.capability_id, 0)
     return Broker(
         PolicyEngine(capabilities),
         ConfirmationManager(provider or CliConfirmation()),
-        AuditLog(audit_path),
+        audit,
     )
 
 
@@ -117,10 +124,27 @@ def cmd_init(args) -> int:
         with open(os.path.join(shared, "readme.txt"), "w") as fh:
             fh.write("Files in shared/ can be listed by demo-reader.\n")
     manifest_path = args.manifest
+    manifest_dir = os.path.dirname(os.path.abspath(manifest_path))
+    default_dir = os.path.dirname(os.path.abspath(default_manifest_path()))
+    existed = os.path.isdir(manifest_dir)
+    os.makedirs(manifest_dir, mode=0o700, exist_ok=True)
+    if not existed or manifest_dir == default_dir:
+        # Harden the default broker directory, and any directory we just
+        # created.  Never chmod an arbitrary pre-existing parent (a custom
+        # path such as /tmp/manifest.json must not turn /tmp into 0700).
+        try:
+            os.chmod(manifest_dir, 0o700)
+        except OSError:
+            pass
     if os.path.exists(manifest_path):
+        # Do not overwrite an existing manifest, but do not leave a
+        # user-controlled grant file world-readable either.
+        try:
+            os.chmod(manifest_path, 0o600)
+        except OSError:
+            pass
         print(f"Manifest already exists, leaving untouched: {manifest_path}")
         return 0
-    os.makedirs(os.path.dirname(manifest_path), exist_ok=True)
     manifest = {"capabilities": [
         {"capability_id": "demo-reader-notes", "tool": "demo-reader",
          "operation": "read_file", "resource": {"type": "file", "path": notes},
@@ -132,7 +156,9 @@ def cmd_init(args) -> int:
          "operation": "write_file", "resource": {"type": "file", "path": summary},
          "rights": ["write"]},
     ]}
-    with open(manifest_path, "w") as fh:
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC
+    fd = os.open(manifest_path, flags, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as fh:
         json.dump(manifest, fh, indent=2)
     print(f"Wrote starter manifest: {manifest_path}")
     print(f"Demo files in: {demo_dir}")

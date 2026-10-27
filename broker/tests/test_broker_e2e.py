@@ -8,12 +8,17 @@ import tempfile
 import threading
 import unittest
 from datetime import timedelta
+from types import SimpleNamespace
+from unittest.mock import patch
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from xor_broker import executor  # noqa: E402
-from xor_broker.audit import AuditLog, read_records, verify_chain  # noqa: E402
+from xor_broker.audit import (  # noqa: E402
+    AuditIntegrityError, AuditLog, read_records, verify_chain,
+)
 from xor_broker.broker import Broker  # noqa: E402
+from xor_broker.cli import build_broker, cmd_init  # noqa: E402
 from xor_broker.confirm import (  # noqa: E402
     ApprovalToken, AutoDenyConfirmation, CliConfirmation, ConfirmationManager,
     ScriptedConfirmation,
@@ -69,6 +74,14 @@ class TestConfirmationFlow(BrokerCase):
         self.assertEqual(out.status, OutcomeStatus.EXECUTED)
         with open(paths["out.txt"]) as fh:
             self.assertEqual(fh.read(), "new content")
+
+    def test_write_creates_private_file(self):
+        broker, paths, _ = self.make(ScriptedConfirmation(default=True))
+        os.unlink(paths["out.txt"])
+        out = broker.handle(ActionRequest("tool-a", Operation.WRITE_FILE,
+                                          paths["out.txt"], b"new content"))
+        self.assertEqual(out.status, OutcomeStatus.EXECUTED)
+        self.assertEqual(stat.S_IMODE(os.stat(paths["out.txt"]).st_mode), 0o600)
 
     def test_write_denied_by_user_does_not_execute(self):
         broker, paths, _ = self.make(ScriptedConfirmation(default=False))
@@ -219,6 +232,105 @@ class TestManifestValidation(unittest.TestCase):
             parse_manifest({"capabilities": [entry, dict(entry)]})
 
 
+class TestDurableUseLimits(BrokerCase):
+    def test_max_uses_survives_broker_rebuild(self):
+        granted = os.path.join(self.root, "granted.txt")
+        audit_path = os.path.join(self.root, "audit.jsonl")
+        manifest_path = os.path.join(self.root, "manifest.json")
+        with open(granted, "w") as fh:
+            fh.write("one read only")
+        manifest = {"capabilities": [{
+            "capability_id": "once", "tool": "tool-a",
+            "operation": "read_file",
+            "resource": {"type": "file", "path": granted},
+            "rights": ["read"], "max_uses": 1,
+        }]}
+        with open(manifest_path, "w") as fh:
+            json.dump(manifest, fh)
+
+        first = build_broker(manifest_path, audit_path,
+                             provider=ScriptedConfirmation(default=True))
+        self.assertEqual(
+            first.handle(ActionRequest("tool-a", Operation.READ_FILE, granted)).status,
+            OutcomeStatus.EXECUTED)
+
+        # A fresh process (as the CLI/daemon restart would do) must see
+        # the execution already recorded in the audit log.
+        second = build_broker(manifest_path, audit_path,
+                              provider=ScriptedConfirmation(default=True))
+        out = second.handle(ActionRequest("tool-a", Operation.READ_FILE, granted))
+        self.assertEqual(out.status, OutcomeStatus.DENIED_POLICY)
+        self.assertEqual(out.reason.value, "capability_exhausted")
+
+
+class TestAuditHardening(BrokerCase):
+    def _append(self, log, result="executed", capability_id="cap-1"):
+        return log.append(
+            request_id="req", tool="tool-a", operation="read_file",
+            resource="/tmp/x", params_digest=None, decision="allow",
+            reason="ok", confirmation=None, result=result,
+            capability_id=capability_id)
+
+    def test_two_writers_do_not_fork_chain(self):
+        path = os.path.join(self.root, "audit.jsonl")
+        first = AuditLog(path)
+        second = AuditLog(path)
+        self._append(first)
+        self._append(second)
+        ok, count, bad = verify_chain(path)
+        self.assertTrue(ok, bad)
+        self.assertEqual(count, 2)
+        self.assertEqual([r["seq"] for r in read_records(path)], [1, 2])
+
+    def test_startup_refuses_tampered_log(self):
+        path = os.path.join(self.root, "audit.jsonl")
+        log = AuditLog(path)
+        self._append(log)
+        with open(path) as fh:
+            record = json.loads(fh.readline())
+        record["tool"] = "rewritten-by-attacker"
+        with open(path, "w") as fh:
+            fh.write(json.dumps(record, sort_keys=True, separators=(",", ":")) + "\n")
+        with self.assertRaises(AuditIntegrityError):
+            AuditLog(path)
+
+    def test_startup_refuses_unreadable_log(self):
+        path = os.path.join(self.root, "audit.jsonl")
+        with open(path, "w") as fh:
+            fh.write("{not json}\n")
+        with self.assertRaises(AuditIntegrityError):
+            AuditLog(path)
+
+    def test_init_creates_private_manifest(self):
+        manifest = os.path.join(self.root, "config", "xor", "manifest.json")
+        with patch("os.path.expanduser", return_value=self.root):
+            rc = cmd_init(SimpleNamespace(manifest=manifest))
+        self.assertEqual(rc, 0)
+        self.assertEqual(stat.S_IMODE(os.stat(manifest).st_mode), 0o600)
+        self.assertEqual(
+            stat.S_IMODE(os.stat(os.path.dirname(manifest)).st_mode), 0o700)
+
+    def test_init_does_not_chmod_an_existing_custom_parent(self):
+        parent = os.path.join(self.root, "custom-grants")
+        os.makedirs(parent)
+        os.chmod(parent, 0o755)
+        manifest = os.path.join(parent, "manifest.json")
+        env = {"XDG_CONFIG_HOME": os.path.join(self.root, "config")}
+        with patch.dict(os.environ, env, clear=False), \
+                patch("os.path.expanduser", return_value=self.root):
+            rc = cmd_init(SimpleNamespace(manifest=manifest))
+        self.assertEqual(rc, 0)
+        self.assertEqual(stat.S_IMODE(os.stat(parent).st_mode), 0o755)
+        self.assertEqual(stat.S_IMODE(os.stat(manifest).st_mode), 0o600)
+
+    def test_existing_audit_parent_permissions_are_not_changed(self):
+        parent = os.path.join(self.root, "shared-state")
+        os.makedirs(parent)
+        os.chmod(parent, 0o755)
+        AuditLog(os.path.join(parent, "audit.jsonl"))
+        self.assertEqual(stat.S_IMODE(os.stat(parent).st_mode), 0o755)
+
+
 class TestSocketRoundTrip(BrokerCase):
     def test_client_server_and_denials(self):
         from xor_broker.server import BrokerClient, BrokerError, serve
@@ -234,6 +346,9 @@ class TestSocketRoundTrip(BrokerCase):
         self.assertEqual(client.read_file(paths["granted.txt"]), b"hello granted")
         with self.assertRaises(BrokerError):
             client.read_file(paths["secret.txt"])
+        # A second daemon must not unlink the live socket.
+        with self.assertRaises(BrokerError):
+            serve(broker, sock)
         resp = client.write_file(paths["out.txt"], b"via socket")
         self.assertEqual(resp["status"], "executed")
         self.assertEqual(stat.S_IMODE(os.stat(sock).st_mode), 0o600)

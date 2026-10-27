@@ -7,6 +7,7 @@ from datetime import timedelta
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
+from xor_broker.manifest import grant_for_selected_file  # noqa: E402
 from xor_broker.models import (  # noqa: E402
     ActionRequest, Capability, Operation, ResourceScope, ScopeKind, utcnow,
 )
@@ -172,6 +173,12 @@ class TestScopedOpen(SandboxCase):
         with self.assertRaises(PathEscapeError):
             open_scoped_file(scope, os.path.join(self.docs, "..", "outside.txt"),
                              write=False)
+
+    def test_selected_file_grant_uses_read_right_for_listing(self):
+        cap = grant_for_selected_file("tool-a", Operation.LIST_DIR,
+                                      self.docs, "selected-dir")
+        self.assertEqual(cap.resource.kind, ScopeKind.FILE)
+        self.assertEqual(cap.rights, frozenset({"read"}))
 
 
 if __name__ == "__main__":

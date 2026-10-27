@@ -71,7 +71,8 @@ the desktop shell must not require touching `policy.py`, `paths.py` or
   are mediated. Same-user processes can still open your files directly.
   Isolating tool/assistant processes (bubblewrap/Flatpak portals) so
   the broker is their only path is the Milestone-4 direction.
-* Tool identity over the socket is self-declared (peer UID/PID are
-  recorded, names are not authenticated yet).
+* Tool identity over the socket is self-declared (peer UID/PID are read
+  and returned in the response, but not used for authorization; names
+  are not authenticated yet).
 * No updater yet — `docs/UPDATE_DESIGN.md` is design only.
 * No LLM, no network capability for tools, by design.

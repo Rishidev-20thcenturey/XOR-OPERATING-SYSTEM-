@@ -135,7 +135,9 @@ class ControlCentre:  # pragma: no cover - GTK requires display
         outer.add(sidebar)
 
         self.stack = Gtk.Stack()
-        self.stack.set_transition_type(Gtk.StackTransitionType.CROSSFADE)
+        self.stack.set_transition_type(
+            Gtk.StackTransitionType.NONE if self.config.reduce_motion
+            else Gtk.StackTransitionType.CROSSFADE)
         self.stack.set_hexpand(True)
         outer.add(self.stack)
 
@@ -271,6 +273,18 @@ class ControlCentre:  # pragma: no cover - GTK requires display
         self.dock_scale.set_digits(0)
         box.add(self.dock_scale)
 
+        box.add(self._label("Dock position"))
+        dock_row = self.Gtk.Box(orientation=self.Gtk.Orientation.HORIZONTAL, spacing=8)
+        self.dock_position_buttons = {}
+        first = None
+        for key, label in (("bottom", "Bottom"), ("left", "Left")):
+            btn = self.Gtk.RadioButton.new_with_label_from_widget(first, label)
+            first = first or btn
+            btn.set_active(self.config.dock_position == key)
+            dock_row.add(btn)
+            self.dock_position_buttons[key] = btn
+        box.add(dock_row)
+
         box.add(self._label("Panel opacity"))
         self.opacity_scale = self.Gtk.Scale.new_with_range(
             self.Gtk.Orientation.HORIZONTAL, 0.52, 0.96, 0.02)
@@ -328,6 +342,9 @@ class ControlCentre:  # pragma: no cover - GTK requires display
         self.config.dock_icon_size = int(self.dock_scale.get_value())
         self.config.panel_opacity = float(self.opacity_scale.get_value())
         self.config.reduce_motion = self.reduce_motion.get_active()
+        for key, button in self.dock_position_buttons.items():
+            if button.get_active():
+                self.config.dock_position = key
         target = save_config(self.config)
         wallpaper = resolve_wallpaper(self.config.wallpaper)
         applied = apply_xfce_wallpaper(wallpaper) if wallpaper else False

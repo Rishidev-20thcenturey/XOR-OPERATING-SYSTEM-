@@ -51,8 +51,8 @@ Shell settings live in `~/.config/xor/shell.json`; see
 
 ```sh
 sudo tools/build-iso.sh        # output: os/live-build/*.iso (+ .sha256, BUILD-MANIFEST.txt)
-tools/run-qemu.sh              # fixed target: q35, 2 vCPU, 4 GiB, virtio-VGA/blk/net,
-                               # USB KVM+tablet, serial -> xor-serial.log
+tools/run-qemu.sh              # fixed target: q35, 2 vCPU, 4 GiB, virtio-vga/blk/net,
+                               # USB keyboard+tablet, serial -> xor-serial.log
 tools/run-qemu.sh --headless   # serial console in your terminal (add console=ttyS0 at boot menu)
 tools/run-qemu.sh --fresh      # recreate the 16G qcow2 first (xor-QEMU-disk.qcow2)
 ```

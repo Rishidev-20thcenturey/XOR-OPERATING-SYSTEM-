@@ -138,7 +138,9 @@ def grant_for_selected_file(tool: str, operation: Operation, selected_path: str,
     canonical = canonicalize(selected_path)
     st = os.stat(canonical)  # follows symlinks at *selection* time; the
     # canonical target is what was selected and is what gets pinned.
-    rights = frozenset({"read"}) if operation in (Operation.READ_FILE,) else frozenset({"write"})
+    rights = (frozenset({"read"})
+              if operation in (Operation.READ_FILE, Operation.LIST_DIR)
+              else frozenset({"write"}))
     return Capability(
         capability_id=capability_id,
         tool=tool,

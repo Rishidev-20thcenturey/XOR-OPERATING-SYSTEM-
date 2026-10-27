@@ -31,22 +31,24 @@ and does not by itself confine arbitrary processes.
 | T6 | Write slips through without the user noticing | **Prevents**: every write needs a fresh confirmation; deny default (EOF/Esc/timeout/provider crash all deny); approval bound to exact action digest, single-use, 120 s TTL. Replayed/stale/cross-action tokens rejected in tests. |
 | T7 | Fake "user approved" text in a document | **Prevents**: approvals come only from the confirmation provider; corpus category `injection_fake_approval` verifies denial. |
 | T8 | Malformed/over-broad capability manifest | **Prevents**: strict validation, whole load fails closed; unsupported ops (delete/network/exec) are ungrantable. |
-| T9 | Audit log leaks private content | **Prevents by design + test**: records contain digests/metadata only; corpus scans logs for content markers (0 leaks). File mode 0600 in 0700 dir. |
-| T10 | Audit log tampering after the fact | **Detects**: SHA-256 hash chain; `verify` finds edits/deletions/reordering (tested). **Limits:** an attacker controlling both log and verifier (e.g. root) can forge a consistent chain — a local chain is tamper-*evidence*, not tamper-proofing. |
-| T11 | Tool impersonation over the Unix socket | **Does not address (yet)**: tool names are self-declared; socket is 0600 per-user and peer UID/PID recorded, but a same-user process could claim another tool's name. Needs sandbox/portal identity (M4). Capabilities therefore separate *cooperating* tools, not hostile same-user code. |
+| T9 | Audit log leaks private content | **Prevents by design + test**: records contain digests/metadata only; corpus scans logs for content markers (0 leaks). Audit file mode 0600; directories created by XOR are 0700. |
+| T10 | Audit log tampering after the fact | **Detects**: SHA-256 hash chain; `verify` finds edits/deletions/reordering (tested), and the broker refuses to start on a broken/unreadable chain. **Limits:** an attacker controlling both log and verifier (e.g. root) can forge a consistent chain; truncating the tail or deleting the whole file is not detectable from the log alone. External head anchoring remains future work. A local chain is tamper-*evidence*, not tamper-proofing. |
+| T11 | Tool impersonation over the Unix socket | **Does not address (yet)**: tool names are self-declared; socket is 0600 per-user and peer UID/PID are returned in the response, but a same-user process could claim another tool's name (and peer credentials are not yet used for authorization). Needs sandbox/portal identity (M4). Capabilities therefore separate *cooperating* tools, not hostile same-user code. |
 | T12 | Malicious same-user process bypasses broker entirely (opens files itself) | **Does not address**: by design, baseline mediation is API-level. Mitigation path = run tools/assistant under bubblewrap/Flatpak with broker as only egress (M4). Never claim otherwise. |
 | T13 | Compromised user account / root / kernel / firmware | **Does not address**: out of scope for a user-space broker. Disk encryption, secure boot etc. belong to later system hardening. |
 | T14 | Malicious/botched OS update | **Does not address yet**: no updater exists. A/B design + failure matrix in `UPDATE_DESIGN.md`; nothing is signed or rolled back today, and we do not claim it is. |
-| T15 | Denial of service via request flooding / huge files | Partial: reads capped at 16 MiB; no rate limiting yet. Fails safe (deny/error), not unsafe. |
+| T15 | Denial of service via request flooding / huge files | Partial: reads capped at 16 MiB, accepted requests at 32 MiB, and per-connection socket timeouts stop one silent client holding the loop forever. The daemon is still single-threaded and has no rate limiting, so flooding remains a local DoS. `max_uses` is durable across restarts but is not a cross-process transaction, so concurrent daemon/CLI requests can still race. Fails safe (deny/error), not unsafe. |
 | T16 | User confused into approving a harmful write | Mitigated, not solved: prompt shows tool, operation, exact target, description and bounded content preview + digest; deny is the focused default. UX phishing research is future work. |
 
 ## Assumptions
 
 * The Linux kernel, Debian userspace and the user's session are not
   already compromised.
-* The capability manifest itself is user-controlled configuration
-  (0600-by-default XDG paths are the user's responsibility to review;
-  `xor-broker grants` displays exactly what is granted).
+* The capability manifest itself is user-controlled configuration.
+  XOR-created manifest/audit files are 0600 and directories it creates
+  are 0700; user-chosen custom paths and their existing parent
+  directories are the user's responsibility to review. `xor-broker
+  grants` displays exactly what is granted.
 * Timestamps use the local clock; expiry is a usability control, not a
   monotonic security guarantee (see UPDATE_DESIGN re: downgrades).
 

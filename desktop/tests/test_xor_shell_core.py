@@ -19,6 +19,7 @@ from xor_shell.core import (  # noqa: E402
     load_config,
     memory_summary,
     network_label,
+    panel_gradient_css,
     parse_battery,
     parse_desktop_file,
     save_config,
@@ -103,6 +104,21 @@ class TestConfigAndStatus(unittest.TestCase):
             loaded = load_config(path)
             self.assertEqual(loaded.accent, "solar")
             self.assertEqual(json.loads(path.read_text())["pinned_apps"], ["Thunar.desktop"])
+
+    def test_malformed_config_falls_back_to_defaults(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "shell.json"
+            path.write_text('["not", "an", "object"]', encoding="utf-8")
+            cfg = load_config(path)
+            self.assertEqual(cfg.accent, "aurora")
+            self.assertEqual(cfg.wallpaper, "xor-royal-aurora.jpg")
+
+    def test_panel_opacity_is_actually_emitted(self):
+        css = panel_gradient_css(0.70)
+        self.assertIn("rgba(10, 16, 30, 0.70)", css)
+        # Values outside the UI range are clamped, not trusted.
+        self.assertIn("rgba(10, 16, 30, 0.52)", panel_gradient_css(0.1))
+        self.assertIn("rgba(10, 16, 30, 0.96)", panel_gradient_css(2.0))
 
     def test_battery_memory_network_parsers(self):
         with tempfile.TemporaryDirectory() as tmp:

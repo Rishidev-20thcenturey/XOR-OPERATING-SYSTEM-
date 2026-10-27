@@ -20,16 +20,9 @@ cp "$DIST/desktop/activity_core.py" "$DIST/desktop/xor_activity.py" /usr/local/l
 cp -r "$DIST/desktop/xor_shell" /usr/local/lib/xor-desktop/
 cp -r "$DIST/assistant/src/xor_assistant" /usr/local/lib/xor-assistant/
 
-# activity_core locates the broker relative to itself; on the installed
-# system point it at /usr/local/lib via a small path shim.
-cat > /usr/local/lib/xor-desktop/xor_broker_path.pth.py <<'EOF'
-import sys
-for p in ("/usr/local/lib/xor-broker", "/usr/local/lib/xor-assistant"):
-    if p not in sys.path:
-        sys.path.insert(0, p)
-EOF
-
-# 2. Command wrappers on PATH.
+# 2. Command wrappers on PATH.  The wrappers set PYTHONPATH explicitly;
+#    there is no need for a .pth shim (and .pth files outside site-packages
+#    are not processed by Python anyway).
 cat > /usr/local/bin/xor-broker <<'EOF'
 #!/bin/sh
 exec env PYTHONPATH=/usr/local/lib/xor-broker python3 -m xor_broker.cli "$@"
@@ -49,14 +42,23 @@ EOF
 install -m 0755 "$DIST/desktop/scripts/xor-shell-autostart.sh" /usr/local/bin/xor-shell-autostart
 install -m 0755 "$DIST/desktop/scripts/xor-broker-autostart.sh" /usr/local/bin/xor-broker-autostart
 install -m 0755 "$DIST/desktop/scripts/xor-broker-demo-run.sh" /usr/local/bin/xor-broker-demo-run
-install -m 0755 "$DIST/broker/examples/demo_reader.py" /usr/local/bin/xor-demo-reader
-install -m 0755 "$DIST/broker/examples/demo_writer.py" /usr/local/bin/xor-demo-writer
-chmod 0755 /usr/local/bin/xor-broker /usr/local/bin/xor-activity /usr/local/bin/xor-shell /usr/local/bin/xor-control-center
-# Example tools need the broker package importable:
-for tool in xor-demo-reader xor-demo-writer; do
-    sed -i '1i import sys; sys.path.insert(0, "/usr/local/lib/xor-broker")' "/usr/local/bin/$tool"
-done
-sed -i 's|^#!/usr/bin/env python3|#!/usr/bin/python3|' /usr/local/bin/xor-demo-reader /usr/local/bin/xor-demo-writer
+install -d /usr/local/lib/xor-broker/examples
+install -m 0644 "$DIST/broker/examples/demo_reader.py" \
+    "$DIST/broker/examples/demo_writer.py" /usr/local/lib/xor-broker/examples/
+# Demo tools get the same PYTHONPATH wrapper treatment as the other
+# commands.  Do not sed an import into the examples: inserting it after
+# the shebang would displace the module docstring, and inserting it
+# before the shebang makes the file unrunnable.
+cat > /usr/local/bin/xor-demo-reader <<'EOF'
+#!/bin/sh
+exec env PYTHONPATH=/usr/local/lib/xor-broker python3 /usr/local/lib/xor-broker/examples/demo_reader.py "$@"
+EOF
+cat > /usr/local/bin/xor-demo-writer <<'EOF'
+#!/bin/sh
+exec env PYTHONPATH=/usr/local/lib/xor-broker python3 /usr/local/lib/xor-broker/examples/demo_writer.py "$@"
+EOF
+chmod 0755 /usr/local/bin/xor-broker /usr/local/bin/xor-activity /usr/local/bin/xor-shell /usr/local/bin/xor-control-center \
+    /usr/local/bin/xor-demo-reader /usr/local/bin/xor-demo-writer
 
 # 3. Menu entries + session autostart of the per-user broker daemon.
 install -m 0644 "$DIST/desktop/applications/xor-broker-demo.desktop" /usr/share/applications/

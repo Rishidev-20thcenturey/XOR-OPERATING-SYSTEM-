@@ -12,17 +12,19 @@ Response::
      "reason": "...", "capability_id": "..."|null,
      "content_b64": "...", "listing": [...]}
 
-Identity honesty: the daemon records the peer UID/PID (SO_PEERCRED) but
-the *tool name is self-declared* in the baseline - any same-UID process
-could claim another tool's name.  Capability checks therefore separate
-cooperating tools from each other but are not yet a hard identity
-boundary.  Authenticating tool identity (e.g. via Flatpak/bubblewrap
-instance IDs) is Milestone 4 work and is documented as such.
+Identity honesty: the daemon reports the peer UID/PID (SO_PEERCRED) in
+its response, but the *tool name is self-declared* in the baseline - any
+same-UID process could claim another tool's name.  Capability checks
+therefore separate cooperating tools from each other but are not yet a
+hard identity boundary.  Authenticating tool identity (e.g. via
+Flatpak/bubblewrap instance IDs) is Milestone 4 work and is documented
+as such.
 """
 
 from __future__ import annotations
 
 import base64
+import fcntl
 import json
 import os
 import socket
@@ -30,6 +32,11 @@ import struct
 
 from .broker import Broker
 from .models import ActionRequest, Operation
+
+DEFAULT_CONNECTION_TIMEOUT = 30.0
+# A write can legitimately wait for the user's confirmation dialog, which
+# has a 120 s TTL.  The client must outlast that, not time out at 30 s.
+DEFAULT_REQUEST_TIMEOUT = 180.0
 
 
 class BrokerError(Exception):
@@ -45,22 +52,58 @@ def _peercred(conn: socket.socket):
         return None
 
 
-def serve(broker: Broker, socket_path: str) -> None:  # pragma: no cover - loop
-    if os.path.exists(socket_path):
-        os.unlink(socket_path)
-    srv = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-    srv.bind(socket_path)
-    os.chmod(socket_path, 0o600)
-    srv.listen(8)
+def serve(broker: Broker, socket_path: str,
+          connection_timeout: float = DEFAULT_CONNECTION_TIMEOUT) -> None:  # pragma: no cover - loop
+    """Serve until interrupted.
+
+    A sibling lock file makes the daemon a singleton: a second instance
+    fails instead of unlinking the live socket.  Per-connection timeouts
+    stop a silent client from holding the single-threaded loop forever.
+    """
+    lock_path = socket_path + ".lock"
+    lock_fd = os.open(lock_path,
+                      os.O_CREAT | os.O_RDWR | os.O_CLOEXEC | os.O_NOFOLLOW, 0o600)
     try:
-        while True:
-            conn, _ = srv.accept()
-            with conn:
-                _handle_conn(broker, conn)
-    finally:
-        srv.close()
+        try:
+            os.fchmod(lock_fd, 0o600)
+        except OSError:
+            pass
+        try:
+            fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as exc:
+            raise BrokerError(
+                f"another xor-broker is already serving on {socket_path}") from exc
+
         if os.path.exists(socket_path):
             os.unlink(socket_path)
+        srv = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        old_umask = os.umask(0o077)
+        try:
+            srv.bind(socket_path)
+        finally:
+            os.umask(old_umask)
+        os.chmod(socket_path, 0o600)
+        srv.listen(8)
+        try:
+            while True:
+                conn, _ = srv.accept()
+                with conn:
+                    try:
+                        conn.settimeout(connection_timeout)
+                        _handle_conn(broker, conn)
+                    except (ConnectionError, OSError):
+                        # A timed-out/broken client must not kill the daemon.
+                        continue
+        finally:
+            srv.close()
+            if os.path.exists(socket_path):
+                os.unlink(socket_path)
+    finally:
+        try:
+            fcntl.flock(lock_fd, fcntl.LOCK_UN)
+        except OSError:
+            pass
+        os.close(lock_fd)
 
 
 def _handle_conn(broker: Broker, conn: socket.socket) -> None:
@@ -103,9 +146,11 @@ class BrokerClient:
     """Client used by cooperating tools (and the future assistant runner).
     This is the *only* supported route to broker-mediated resources."""
 
-    def __init__(self, tool: str, socket_path: str):
+    def __init__(self, tool: str, socket_path: str,
+                 timeout: float = DEFAULT_REQUEST_TIMEOUT):
         self.tool = tool
         self.socket_path = socket_path
+        self.timeout = timeout
 
     def _call(self, operation: Operation, path: str, content=None,
               description: str = "") -> dict:
@@ -117,6 +162,7 @@ class BrokerClient:
             "description": description,
         }
         with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as sock:
+            sock.settimeout(self.timeout)
             sock.connect(self.socket_path)
             sock.sendall((json.dumps(payload) + "\n").encode("utf-8"))
             buf = b""

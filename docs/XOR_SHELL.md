@@ -13,7 +13,7 @@ manages windows and XFCE remains the fallback if the shell is closed.
 | Floating dock | Pinned applications, live running-window buttons through optional Wnck, Files Trash shortcut |
 | Full-screen launcher | Discovers real `.desktop` apps; weighted search, category pills, app cards, Enter launches first match, Esc closes |
 | Command Centre | Live local network/battery/memory cards plus Files, network, sound, display, screenshot, appearance, security and settings actions |
-| Control Centre | Overview, Appearance, Security, System and About pages; accents, wallpaper selection, dock size/opacity, broker audit summary |
+| Control Centre | Overview, Appearance, Security, System and About pages; accents, wallpaper selection, dock position/size, panel opacity, reduce-motion, broker audit summary |
 
 ## Run from the repository
 
@@ -44,8 +44,11 @@ Aurora saves validated settings to `~/.config/xor/shell.json`:
 * reduce-motion and clock-seconds preferences
 * up to 14 pinned `.desktop` application IDs
 
-Installed wallpapers live in `/usr/share/xor/wallpapers/`; repository
-development reads `desktop/theme/wallpapers/` as a fallback.
+These settings are consumed, not just saved: dock position/size and
+panel opacity are applied on the next XOR Shell start, and reduce-motion
+disables Control Centre page fades and shell CSS transitions. Installed
+wallpapers live in `/usr/share/xor/wallpapers/`; repository development
+reads `desktop/theme/wallpapers/` as a fallback.
 
 ## Keyboard contract
 

@@ -20,11 +20,21 @@ FILTERS = ("all", "executed", "denied", "failed")
 
 
 def load(audit_path: str | None = None):
-    """Returns (records, chain_ok, chain_checked)."""
+    """Returns (records, chain_ok, chain_checked).
+
+    A missing, truncated or malformed log is reported as unavailable
+    rather than crashing the viewer; the caller can still show that the
+    chain is not valid.
+    """
     path = audit_path or default_audit_path()
-    records = list(read_records(path))
-    ok, n, _bad = verify_chain(path)
-    return records, ok, n
+    try:
+        records = list(read_records(path))
+        if not all(isinstance(record, dict) for record in records):
+            return [], False, 0
+        ok, n, _bad = verify_chain(path)
+        return records, ok, n
+    except (OSError, ValueError, UnicodeError, TypeError, KeyError):
+        return [], False, 0
 
 
 def apply_filter(records, name: str):

@@ -138,7 +138,31 @@ def t_livebuild_tree():
                    "desktop/theme/wallpapers/", "xor-logo.svg",
                    "xor_shell --status-json", "xor_shell.control_center --text"):
         assert needle in hook, f"install hook lacks {needle}"
+    # Demo tools are exposed through PYTHONPATH wrappers.  Do not mutate
+    # their shebang/docstring with sed; both variants have broken before.
+    for needle in ("/usr/local/bin/xor-demo-reader",
+                   "/usr/local/bin/xor-demo-writer",
+                   "/usr/local/lib/xor-broker/examples/demo_reader.py",
+                   "PYTHONPATH=/usr/local/lib/xor-broker python3 "
+                   "/usr/local/lib/xor-broker/examples/demo_reader.py"):
+        assert needle in hook, f"install hook lacks {needle}"
+    assert "sed -i '1i import sys" not in hook, "demo-tool import is before the shebang"
+    assert "sed -i '1a import sys" not in hook, "demo-tool import displaces the docstring"
     return "config, hook, package list + Aurora install wiring present"
+
+
+def t_qemu_target():
+    path = os.path.join(REPO, "tools/run-qemu.sh")
+    text = open(path, encoding="utf-8").read()
+    # QEMU device names and Linux device nodes are case-sensitive.  These
+    # typos are invisible to ShellCheck and would break the first boot.
+    assert "/dev/kvm" in text, "run-qemu.sh does not check /dev/kvm"
+    assert 'ACCEL="kvm"' in text, "run-qemu.sh does not select the kvm accelerator"
+    assert "virtio-vga" in text, "run-qemu.sh lacks virtio-vga"
+    assert "usb-kbd" in text, "run-qemu.sh lacks a USB keyboard device"
+    for bad in ("/dev/KVM", 'ACCEL="KVM"', "virtio-VGA", "usb-KVM"):
+        assert bad not in text, f"run-qemu.sh contains invalid identifier {bad!r}"
+    return "KVM, virtio-vga and usb-kbd identifiers are correct"
 
 
 def t_shell():
@@ -235,6 +259,7 @@ def main():
     check("XFCE theme XML well-formed", t_xml)
     check(".desktop entries", t_desktop_files)
     check("live-build tree complete", t_livebuild_tree)
+    check("QEMU target identifiers", t_qemu_target)
     check("shell scripts", t_shell)
     check("wallpaper PNG", t_wallpaper)
     check("Aurora shell assets", t_aurora_assets)

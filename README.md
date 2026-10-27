@@ -59,7 +59,7 @@ the dependable XFCE/X11 session while it earns replacement status.
 | **Floating dock** | Pinned apps, large luminous icons, live running-window buttons via Wnck, Trash shortcut |
 | **Full-screen launcher** | Real app discovery, weighted search, category pills, generous app cards; Enter opens the best match, Esc closes |
 | **Command Centre** | Honest live network, battery and memory cards with shortcuts to files, sound, displays, screenshot, appearance and security |
-| **Control Centre** | Overview, Appearance, Security, System and About; four accent palettes, wallpaper picker, dock size/opacity, reduce-motion, broker audit summary |
+| **Control Centre** | Overview, Appearance, Security, System and About; four accent palettes, wallpaper picker, dock size/position/opacity, reduce-motion, broker audit summary |
 | **Royal Aurora identity** | Midnight glass wallpapers, scalable glass-X logo, teal/violet/gold CSS design tokens and visible keyboard focus |
 
 XFCE remains available as the recovery/fallback session during the
@@ -121,7 +121,7 @@ traversal denied; a write pause for approval; a network send refused;
 and the tamper-evident audit trail tying it together.
 
 ```sh
-tools/test.sh       # 41 tests + 200-scenario security corpus
+tools/test.sh       # 53 tests + 200-scenario security corpus
 tools/validate.sh   # code, assets, docs inputs and live-build wiring
 ```
 
@@ -156,7 +156,7 @@ tools/run-qemu.sh
 ```
 
 The fixed virtual target is QEMU `q35`, 2 vCPU, 4 GiB RAM,
-virtio-VGA, virtio block/network, USB keyboard/tablet and serial
+virtio-vga, virtio block/network, USB keyboard/tablet and serial
 logging. Live user: `user` (password `live` if prompted).
 
 Each build writes the ISO SHA-256 and `BUILD-MANIFEST.txt`. We do
@@ -166,7 +166,7 @@ Each build writes the ISO SHA-256 and `BUILD-MANIFEST.txt`. We do
 
 Latest sandbox results:
 
-* **41 unit tests passed** under pytest (broker, assistant gate,
+* **53 unit tests passed** under unittest (broker, assistant gate,
   Activity and Aurora cores).
 * **200 security scenarios + 50 injection twins passed**:
   0 out-of-grant actions executed, 0 network sends, 0 unconfirmed
