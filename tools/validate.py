@@ -128,6 +128,13 @@ def t_livebuild_tree():
     config = open(os.path.join(base, "auto/config")).read()
     for needle in ("trixie", "amd64", "iso-hybrid"):
         assert needle in config, f"auto/config lacks {needle}"
+    # live-build only applies its mirror defaults when --mode is lowercase
+    # "debian".  The old "Debian" spelling produced an empty mirror URI and
+    # an unreadable /etc/apt/sources.list inside the chroot.
+    assert "--mode debian" in config, "auto/config must use lowercase debian mode"
+    assert "http://deb.debian.org/debian" in config, "auto/config lacks the Debian mirror"
+    assert "http://security.debian.org/debian-security" in config, \
+        "auto/config lacks the Debian security mirror"
     packages = open(os.path.join(base, "config/package-lists/xor.list.chroot")).read()
     package_lines = {
         line.strip() for line in packages.splitlines()
@@ -155,7 +162,7 @@ def t_livebuild_tree():
         assert needle in hook, f"install hook lacks {needle}"
     assert "sed -i '1i import sys" not in hook, "demo-tool import is before the shebang"
     assert "sed -i '1a import sys" not in hook, "demo-tool import displaces the docstring"
-    return "config, hook, package list + Aurora install wiring present"
+    return "config, mirrors, hook, package list + Aurora install wiring present"
 
 
 def t_qemu_target():

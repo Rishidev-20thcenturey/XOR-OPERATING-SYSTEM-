@@ -118,6 +118,7 @@ jobs:
 
           set +e
           docker run --rm --privileged \
+            --env DEBIAN_FRONTEND=noninteractive \
             --volume "$PWD:/work" \
             --workdir /work \
             debian:trixie \
@@ -135,6 +136,16 @@ jobs:
 
           echo "build_exit=$BUILD_RC" >> artifacts/build-start.txt
           if [ "$BUILD_RC" -ne 0 ]; then
+            # Preserve a small amount of generated apt state so a failed
+            # build is diagnosable without re-running the whole job.
+            for f in \
+              os/live-build/config/common \
+              os/live-build/chroot/etc/apt/sources.list \
+              os/live-build/config/archives/*.list
+            do
+              [ -e "$f" ] || continue
+              sudo cp "$f" "artifacts/failure-$(printf '%s' "$f" | tr '/' '_')" || true
+            done
             echo "::error::ISO build failed with exit code $BUILD_RC; see artifacts/build-iso.log"
             exit "$BUILD_RC"
           fi
