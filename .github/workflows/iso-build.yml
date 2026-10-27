@@ -262,7 +262,8 @@ jobs:
 
           # Direct kernel boot gives us a reliable serial console without
           # changing the production ISO boot configuration.  The ISO remains
-          # attached so live-boot finds /live/filesystem.squashfs.
+          # attached so live-boot finds /live/filesystem.squashfs.  q35 does
+          # not honor -drive if=ide, so attach an explicit ide-cd frontend.
           qemu-system-x86_64 \
             -machine q35,accel=tcg \
             -cpu qemu64 \
@@ -270,7 +271,8 @@ jobs:
             -kernel "$KERNEL" \
             -initrd "$INITRD" \
             -append "boot=live components hostname=XOR username=user console=ttyS0,115200 systemd.show_status=1 loglevel=6" \
-            -drive file="$ISO",media=cdrom,if=ide,index=2,readonly=on \
+            -drive file="$ISO",media=cdrom,readonly=on,if=none,id=cdrom0 \
+            -device ide-cd,drive=cdrom0 \
             -vga none \
             -device virtio-vga \
             -device virtio-net-pci,netdev=net0 \
