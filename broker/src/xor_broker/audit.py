@@ -157,7 +157,7 @@ class AuditLog:
                 pass
         self._seq, self._last_hash = 0, GENESIS_HASH
         self._identity = None
-        if os.path.exists(self.path):
+        if os.path.lexists(self.path):
             # Verify and read the tail under a shared lock so a concurrent
             # writer cannot expose a half-written final line at startup.
             fd = self._open_audit_fd(os.O_RDONLY, AuditIntegrityError)
@@ -283,7 +283,7 @@ class AuditLog:
         after the action may already have run; the broker converts that
         to an explicit failure outcome.  This is not crash-atomic.
         """
-        if self._identity is not None and not os.path.exists(self.path):
+        if self._identity is not None and not os.path.lexists(self.path):
             raise AuditIntegrityError(
                 f"audit log disappeared after it was opened: {self.path}")
         flags = os.O_RDWR | os.O_APPEND | os.O_CREAT
@@ -374,7 +374,7 @@ class AuditLog:
         damaged log cannot silently reset ``max_uses``.  Replacing the
         audit pathname after startup also fails closed.
         """
-        if not os.path.exists(self.path):
+        if not os.path.lexists(self.path):
             if self._identity is not None:
                 raise AuditIntegrityError(
                     f"audit log disappeared after it was opened: {self.path}")
@@ -417,7 +417,7 @@ class AuditLog:
 
 def read_records(path: str) -> Iterator[dict]:
     """Yield records for inspection, using one locked no-follow FD."""
-    if not os.path.exists(path):
+    if not os.path.lexists(path):
         return
     try:
         fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC | os.O_NONBLOCK)
@@ -446,7 +446,7 @@ def read_records(path: str) -> Iterator[dict]:
 
 def verify_chain(path: str) -> tuple:
     """Returns (ok: bool, records_checked: int, first_bad_seq: int|None)."""
-    if not os.path.exists(path):
+    if not os.path.lexists(path):
         return True, 0, None
     try:
         fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC | os.O_NONBLOCK)
