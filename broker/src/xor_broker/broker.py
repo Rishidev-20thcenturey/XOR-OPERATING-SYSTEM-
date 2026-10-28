@@ -16,9 +16,10 @@ Guarantees provided here:
 Honest scope (see docs/THREAT_MODEL.md): this mediates requests made
 *through this API* by cooperating tools.  It does not intercept syscalls
 of arbitrary same-user processes.  System-wide enforcement via sandbox
-isolation of tool/assistant processes is a later milestone.  Execution
-and audit append are not crash-atomic: a process/kernel crash after the
-action but before the durable append can undercount ``max_uses``.
+isolation of tool/assistant processes is available as an opt-in
+bubblewrap launcher, not a default boundary.  Execution and audit append
+are not crash-atomic: a process/kernel crash after the action but before
+the durable append can undercount ``max_uses``.
 """
 
 from __future__ import annotations

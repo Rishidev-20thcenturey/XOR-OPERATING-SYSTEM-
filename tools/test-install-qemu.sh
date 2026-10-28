@@ -146,6 +146,7 @@ qemu-system-x86_64 \
     -machine q35,accel=tcg \
     -cpu qemu64 \
     -m 4096 -smp 2 \
+    -boot order=c \
     -drive file="$OUT/disk.qcow2",if=virtio,format=qcow2 \
     -netdev user,id=net0 \
     -device virtio-net-pci,netdev=net0 \

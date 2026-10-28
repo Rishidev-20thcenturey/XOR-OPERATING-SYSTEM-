@@ -12,13 +12,13 @@ Response::
      "reason": "...", "capability_id": "..."|null,
      "content_b64": "...", "listing": [...]}
 
-Identity honesty: the daemon reports the peer UID/PID (SO_PEERCRED) in
-its response, but the *tool name is self-declared* in the baseline - any
-same-UID process could claim another tool's name.  Capability checks
-therefore separate cooperating tools from each other but are not yet a
-hard identity boundary.  Authenticating tool identity (e.g. via
-Flatpak/bubblewrap instance IDs) is Milestone 4 work and is documented
-as such.
+Identity: when the daemon is started with a token directory, each tool
+must present its own bearer token.  The daemon reports peer UID/PID
+(SO_PEERCRED) for diagnostics, but tokens are not bound to those
+credentials or to a sandbox instance: a same-UID process that can read
+the token directory can still impersonate a tool.  The opt-in
+``xor-broker launch`` sandbox limits which token file a cooperating tool
+can see.
 """
 
 from __future__ import annotations

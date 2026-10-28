@@ -120,6 +120,27 @@ class TokenStoreCase(unittest.TestCase):
         client = BrokerClient("tool-a", sock_path, tool_token=token)
         self.assertEqual(client.read_file(self.granted), b"read me")
 
+        # The default client path reads the tool's token file, not an argv
+        # secret.  A wrong file token must fail closed.
+        old_dir = os.environ.get("XOR_TOKEN_DIR")
+        os.environ["XOR_TOKEN_DIR"] = self.store.directory
+        try:
+            self.assertEqual(
+                BrokerClient("tool-a", sock_path).read_file(self.granted),
+                b"read me")
+            with self.assertRaises(BrokerError):
+                BrokerClient("tool-a", sock_path,
+                             tool_token="wrong").read_file(self.granted)
+            self.store.revoke("tool-a")
+            with self.assertRaises(BrokerError):
+                BrokerClient("tool-a", sock_path).read_file(self.granted)
+        finally:
+            if old_dir is None:
+                os.environ.pop("XOR_TOKEN_DIR", None)
+            else:
+                os.environ["XOR_TOKEN_DIR"] = old_dir
+            self.store.issue("tool-a", token)
+
         with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as raw:
             raw.connect(sock_path)
             raw.sendall(b'{"tool": "tool-a"}\n')
