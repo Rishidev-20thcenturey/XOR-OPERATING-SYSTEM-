@@ -14,12 +14,11 @@ The latest ISO-build/QEMU evidence is from GitHub Actions run
 [40597398794](https://github.com/Rishidev-20thcenturey/XOR-OPERATING-SYSTEM-/actions/runs/40597398794),
 described in the ISO-build/QEMU section below.
 
-## Unit tests — PASS (95 tests)
+## Unit tests — PASS (96 in current CI; 95 in earlier local run)
 
-Latest `tools/test.sh` run (unittest fallback) → **95 passed**:
-80 broker tests (including corpus-as-test), 3 assistant-gate tests and
-12 desktop tests. Exact durations from the final run: 80 tests in
-3.338 s, 3 tests in 0.003 s, 12 tests in 0.040 s. Covers: default-deny
+Latest PR CI run [40640029964](https://github.com/Rishidev-20thcenturey/XOR-OPERATING-SYSTEM-/actions/runs/40640029964) passed **96 tests**: 81 broker tests and 15 assistant/desktop tests. Both Python 3.11 and 3.12 jobs passed. Static validation, ShellCheck, build-script artifact regressions, and the 200-scenario corpus + 50 injection twins also passed; all 10 corpus acceptance criteria passed. The new dangling audit-log symlink regression is included.
+
+Earlier local Termux `tools/test.sh` run (unittest fallback) → **95 passed**: 80 broker tests (including corpus-as-test), 3 assistant-gate tests and 12 desktop tests. Exact durations from that pre-regression run: 80 tests in 3.338 s, 3 tests in 0.003 s, and 12 tests in 0.040 s. Covers: default-deny
 matrix, exact file/dir scoping, traversal & symlink fail-closed (incl.
 write-through leaving target untouched), selected-directory grants
 issuing `dir` scope and actually listing, replacement of a selected
