@@ -164,7 +164,7 @@ traversal denied; a write pause for approval; a network send refused;
 and the tamper-evident audit trail tying it together.
 
 ```sh
-tools/test.sh       # 95 tests + 200-scenario security corpus
+tools/test.sh       # 96 tests + 200-scenario security corpus
 tools/validate.sh   # code, assets, docs inputs and live-build wiring
 ```
 
@@ -217,9 +217,12 @@ build outputs.
 
 ## ✅ Evidence, not promises
 
-Latest verified results (2026-10-27, Termux/Android, Python 3.13.13):
+Earlier local results (2026-10-27, Termux/Android, Python 3.13.13):
 
-* **95 unit tests passed** under unittest: 80 broker (including
+* **Latest PR CI (2026-10-28): 96 tests passed** on Python 3.11 and 3.12:
+  81 broker tests and 15 assistant/desktop tests. The dangling audit-log
+  symlink regression is included. [CI run 40640029964](https://github.com/Rishidev-20thcenturey/XOR-OPERATING-SYSTEM-/actions/runs/40640029964).
+* **Earlier local baseline: 95 unit tests passed** under unittest: 80 broker (including
   corpus-as-test), 3 assistant-gate and 12 desktop/Activity/Aurora.
   Write regressions prove a replaced pinned file keeps its contents,
   deleted pinned targets are not recreated, failed/zero-progress writes
