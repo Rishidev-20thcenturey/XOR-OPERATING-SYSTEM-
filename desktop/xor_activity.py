@@ -32,6 +32,28 @@ def run_text(audit_path, filter_name, query) -> int:
     return 0 if ok else 1
 
 
+def _sync_filter_buttons(buttons, selected, state):
+    """Mirror the selected filter into toggle buttons without signal recursion."""
+    state["refreshing"] = True
+    try:
+        for name, button in buttons.items():
+            button.set_active(name == selected)
+    finally:
+        state["refreshing"] = False
+
+
+def _on_filter_toggled(name, button, state, refresh):
+    """Handle user toggles; ignore programmatic updates during refresh."""
+    if state["refreshing"]:
+        return
+    if not button.get_active():
+        # Keep one filter selected if the active toggle is clicked off.
+        refresh()
+        return
+    state["filter"] = name
+    refresh()
+
+
 def run_gtk(audit_path) -> int:  # pragma: no cover - needs a display
     import gi
     gi.require_version("Gtk", "3.0")
@@ -87,27 +109,13 @@ def run_gtk(audit_path) -> int:  # pragma: no cover - needs a display
             store.append([r["seq"], r["timestamp"].replace("T", " ")[:19], r["tool"],
                           r["operation"], r["decision"], str(r["confirmation"]),
                           r["result"], r["reason"], r["resource"]])
-        # set_active() emits "toggled".  Suppress those callbacks
-        # while refreshing the radio-like toggle-button group.
-        state["refreshing"] = True
-        try:
-            for name, btn in buttons.items():
-                btn.set_active(name == state["filter"])
-        finally:
-            state["refreshing"] = False
+        _sync_filter_buttons(buttons, state["filter"], state)
         status.set_text(f"{len(shown)}/{len(records)} records · "
                         f"hash chain: {'VALID' if ok else 'BROKEN'} ({n} verified)")
 
     def set_filter(name):
         def handler(btn):
-            if state["refreshing"]:
-                return
-            # Keep one filter selected if the active toggle is clicked off.
-            if not btn.get_active():
-                refresh()
-                return
-            state["filter"] = name
-            refresh()
+            _on_filter_toggled(name, btn, state, refresh)
         return handler
 
     for name, btn in buttons.items():
