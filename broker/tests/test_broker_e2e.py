@@ -8,6 +8,7 @@ import os
 import stat
 import sys
 import tempfile
+import types
 import threading
 import time
 import unittest
@@ -1158,6 +1159,86 @@ class TestAuditHardening(BrokerCase):
         self.assertEqual(rc, 2)
         self.assertTrue(os.path.islink(manifest))
         self.assertEqual(stat.S_IMODE(os.stat(target).st_mode), 0o644)
+
+
+class TestGtkConfirmationTimer(unittest.TestCase):
+    def test_answering_dialog_removes_pending_timeout_source(self):
+        from xor_broker.confirm import ConfirmationPrompt
+        from xor_broker.confirm_gtk import GtkConfirmation
+
+        class FakeGLib:
+            removed_sources = []
+
+            @staticmethod
+            def markup_escape_text(value):
+                return value
+
+            @staticmethod
+            def timeout_add_seconds(_seconds, _callback):
+                return 47
+
+            @classmethod
+            def source_remove(cls, source_id):
+                cls.removed_sources.append(source_id)
+                return True
+
+        class FakeBox:
+            def set_spacing(self, *_args): pass
+            def set_margin_top(self, *_args): pass
+            def set_margin_bottom(self, *_args): pass
+            def set_margin_start(self, *_args): pass
+            def set_margin_end(self, *_args): pass
+            def add(self, *_args): pass
+
+        class FakeLabel:
+            def __init__(self, **_kwargs): pass
+            def set_markup(self, *_args): pass
+            def set_xalign(self, *_args): pass
+            def set_line_wrap(self, *_args): pass
+            def set_selectable(self, *_args): pass
+
+        class FakeButton:
+            def grab_focus(self): pass
+            def get_style_context(self): return self
+            def add_class(self, *_args): pass
+
+        class FakeDialog:
+            def __init__(self, **_kwargs):
+                self.box = FakeBox()
+            def set_modal(self, *_args): pass
+            def set_default_size(self, *_args): pass
+            def get_content_area(self): return self.box
+            def add_button(self, *_args): return FakeButton()
+            def connect(self, *_args): pass
+            def show_all(self): pass
+            def run(self): return 1  # immediate Approve Once response
+            def response(self, *_args): pass
+            def destroy(self): pass
+
+        fake_gtk = types.ModuleType("gi.repository.Gtk")
+        fake_gtk.Dialog = FakeDialog
+        fake_gtk.Label = FakeLabel
+        fake_gtk.ResponseType = types.SimpleNamespace(REJECT=0, ACCEPT=1)
+        fake_gtk.events_pending = lambda: False
+        fake_gtk.main_iteration = lambda: None
+
+        fake_repository = types.ModuleType("gi.repository")
+        fake_repository.GLib = FakeGLib
+        fake_repository.Gtk = fake_gtk
+        fake_gi = types.ModuleType("gi")
+        fake_gi.__path__ = []
+        fake_gi.require_version = lambda *_args: None
+
+        prompt = ConfirmationPrompt(
+            pending_id="test", tool="demo", operation="write_file",
+            target="/tmp/target", description="test", preview="1 byte",
+        )
+        with patch.dict(sys.modules, {
+                "gi": fake_gi, "gi.repository": fake_repository}):
+            approved = GtkConfirmation().confirm(prompt)
+
+        self.assertTrue(approved)
+        self.assertEqual(FakeGLib.removed_sources, [47])
 
 
 class TestSocketRoundTrip(BrokerCase):
