@@ -14,9 +14,9 @@ The latest ISO-build/QEMU evidence is from GitHub Actions run
 [40597398794](https://github.com/Rishidev-20thcenturey/XOR-OPERATING-SYSTEM-/actions/runs/40597398794),
 described in the ISO-build/QEMU section below.
 
-## Unit tests — PASS (110 locally on 2026-10-28; 96 in earlier CI)
+## Unit tests — PASS (111 locally on 2026-10-28; 96 in earlier CI)
 
-The 2026-10-28 local Termux run passed **110 tests**: **94 broker tests**
+The 2026-10-28 local Termux run passed **111 tests**: **95 broker tests**
 (including the new token/sandbox/grant regression file) and **16
 assistant/desktop tests**. Static validation passed, including pyflakes,
 ShellCheck, the 200-scenario corpus + 50 injection twins, and all 10
@@ -25,6 +25,7 @@ modes/rotation/revocation, missing/wrong/non-string token denial,
 unregistered-tool denial, revocation during confirmation, malformed-wire
 audit, refusal to serve from a public socket directory, sandbox argv
 token non-disclosure, socket/token-only binds, unsafe-path rejection,
+public socket/token-directory refusal,
 and atomic manifest grant/revoke with inode pinning.
 
 Earlier PR CI run [40640029964](https://github.com/Rishidev-20thcenturey/XOR-OPERATING-SYSTEM-/actions/runs/40640029964) passed **96 tests**: 81 broker tests and 15 assistant/desktop tests. Both Python 3.11 and 3.12 jobs passed. Static validation, ShellCheck, build-script artifact regressions, and the 200-scenario corpus + 50 injection twins also passed; all 10 corpus acceptance criteria passed. The dangling audit-log symlink regression is included.

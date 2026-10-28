@@ -112,6 +112,17 @@ class Broker:
         decision = None
         try:
             with self.audit.execution_lock():
+                # A token revoked between the initial check and the lock must
+                # not authorize even a read.
+                if not self.verify_tool_identity(request):
+                    outcome = Outcome(
+                        OutcomeStatus.DENIED_POLICY,
+                        ReasonCode.UNAUTHENTICATED_TOOL,
+                        request.request_id,
+                        None,
+                        error=f"tool {request.tool!r} identity verification failed (invalid or missing token)",
+                    )
+                    return self._audit_or_failure(request, None, outcome, None)
                 self._refresh_uses()
                 decision = self.policy.evaluate(request, utcnow())
                 if not decision.allowed:

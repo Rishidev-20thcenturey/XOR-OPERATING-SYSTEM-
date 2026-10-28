@@ -151,6 +151,13 @@ class TokenStoreCase(unittest.TestCase):
         ok, _n, bad = verify_chain(os.path.join(self.root, "audit.jsonl"))
         self.assertTrue(ok, bad)
 
+    def test_token_store_refuses_a_public_directory(self):
+        public = os.path.join(self.root, "public-tokens")
+        os.mkdir(public, 0o700)
+        os.chmod(public, 0o755)
+        with self.assertRaises(TokenStoreError):
+            TokenStore(public)
+
     def test_serve_refuses_a_public_socket_directory(self):
         public = os.path.join(self.root, "public")
         os.mkdir(public, 0o700)

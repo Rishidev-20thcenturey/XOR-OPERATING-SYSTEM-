@@ -16,7 +16,6 @@ from __future__ import annotations
 import os
 import shutil
 import stat
-import subprocess
 from dataclasses import dataclass, field
 from typing import List, Sequence
 
@@ -53,11 +52,6 @@ class SandboxConfig:
     mask_home: bool = True
     read_only_binds: Sequence[str] = field(
         default_factory=lambda: list(DEFAULT_SYSTEM_RO_BINDS))
-
-
-def is_sandbox_supported() -> bool:
-    """True if bubblewrap (bwrap) executable is available in PATH."""
-    return shutil.which("bwrap") is not None
 
 
 def _check_file(path: str, *, socket_expected: bool = False) -> None:
@@ -133,10 +127,3 @@ def build_bubblewrap_args(config: SandboxConfig) -> List[str]:
     args.append("--")
     args.extend(config.command)
     return args
-
-
-def launch_sandboxed(config: SandboxConfig) -> subprocess.Popen:
-    """Start the sandboxed command and return the bwrap process."""
-    if not is_sandbox_supported():
-        raise RuntimeError("bubblewrap (bwrap) is not installed")
-    return subprocess.Popen(build_bubblewrap_args(config))

@@ -71,10 +71,12 @@ class TokenStore:
             raise TokenStoreError(f"token store is not a directory: {self.directory}")
         if st.st_uid != os.geteuid():
             raise TokenStoreError(f"token store is not owned by this user: {self.directory}")
-        try:
-            os.chmod(self.directory, 0o700)
-        except OSError as exc:
-            raise TokenStoreError(f"cannot secure token store: {exc}") from exc
+        # Never chmod a pre-existing directory: a caller could point at a
+        # shared path such as /tmp.  Require an already-private directory.
+        if stat.S_IMODE(st.st_mode) & 0o077:
+            raise TokenStoreError(
+                f"token store must be private (0700), not "
+                f"{oct(stat.S_IMODE(st.st_mode))}: {self.directory}")
 
     def path_for(self, tool: str) -> str:
         return token_path(self.directory, tool)
@@ -125,16 +127,5 @@ class TokenStore:
             os.unlink(self.path_for(tool))
         except FileNotFoundError:
             pass
-
-    def has_tokens(self) -> bool:
-        try:
-            entries = os.scandir(self.directory)
-        except OSError:
-            return False
-        with entries:
-            for entry in entries:
-                if entry.name.startswith("."):
-                    continue
-                if entry.is_file(follow_symlinks=False):
-                    return True
-        return False
+        except IsADirectoryError as exc:
+            raise TokenStoreError(f"token path is a directory: {self.path_for(tool)}") from exc

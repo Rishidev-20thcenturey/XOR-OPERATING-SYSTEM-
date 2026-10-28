@@ -52,7 +52,7 @@ Modern operating systems leak user data by default, grant broad ambient permissi
 | Subsystem Component | Operational Status | Cryptographic & Runtime Evidence |
 |---|---|---|
 | **CI Core Suite** | `PASS [GREEN]` | [GitHub Actions Run 40640230528](https://github.com/Rishidev-20thcenturey/XOR-OPERATING-SYSTEM-/actions/runs/40640230528) (Python 3.11, 3.12, ShellCheck) |
-| **Unit Verification** | `110 / 110 PASS` | 94 broker security tests + 16 desktop/assistant gate suites passing |
+| **Unit Verification** | `111 / 111 PASS` | 95 broker security tests + 16 desktop/assistant gate suites passing |
 | **Adversarial Corpus** | `200 / 200 PASS` | 100 out-of-grant attempts, 50 injection twins, 50 legitimate operations |
 | **Live ISO Image** | `VERIFIED` | 1.364 GiB live hybrid ISO (`SHA-256: 2fb52d345a9209fae87a32965f32d64e5fcb75ce2ad207dd895d79034ed80603`) |
 | **QEMU Live Display** | `VERIFIED BOOT` | [Actions Run 40597398794](https://github.com/Rishidev-20thcenturey/XOR-OPERATING-SYSTEM-/actions/runs/40597398794) captured live 1280x800 Aurora desktop |
@@ -140,7 +140,7 @@ PYTHONPATH=broker/src python3 -m xor_broker.cli demo
 
 ### ❯ Step 3: Run the Complete Security Validation Matrix
 ```sh
-tools/test.sh       # Executes 110 unit tests + 200 adversarial security scenarios
+tools/test.sh       # Executes 111 unit tests + 200 adversarial security scenarios
 tools/validate.sh   # Verifies static syntax, CSS tokens, live-build configs & ShellCheck
 ```
 
@@ -205,7 +205,7 @@ tools/run-qemu.sh
 XOR-OPERATING-SYSTEM-/
 ├── broker/                  # Cryptographic permission broker & daemon core
 │   ├── src/xor_broker/      # Enforcement engines: policy, executor, paths, audit
-│   ├── tests/               # 94 comprehensive unit & stress test suites
+│   ├── tests/               # 95 comprehensive unit & stress test suites
 │   └── examples/            # Reference reader/writer clients & grant manifests
 ├── desktop/                 # Aurora Shell desktop environment
 │   ├── xor_shell/           # GTK 3 panel, dock, launcher, and Control Centre
