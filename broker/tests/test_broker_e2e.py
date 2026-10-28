@@ -1183,5 +1183,75 @@ class TestSocketRoundTrip(BrokerCase):
         self.assertEqual(stat.S_IMODE(os.stat(sock).st_mode), 0o600)
 
 
+    def test_read_proceeds_while_write_confirmation_is_waiting(self):
+        from xor_broker.server import BrokerClient, serve
+
+        prompt_started = threading.Event()
+        approve_write = threading.Event()
+
+        class BlockingConfirmation:
+            def confirm(self, _prompt):
+                prompt_started.set()
+                return approve_write.wait(8)
+
+        broker, paths, _audit_path = self.make(BlockingConfirmation())
+        sock = os.path.join(self.root, "concurrent-broker.sock")
+        server_thread = threading.Thread(
+            target=serve, args=(broker, sock), daemon=True)
+        server_thread.start()
+        for _ in range(100):
+            if os.path.exists(sock):
+                break
+            threading.Event().wait(0.05)
+
+        writer = BrokerClient("tool-a", sock, timeout=10)
+        reader = BrokerClient("tool-a", sock, timeout=3)
+        write_results = []
+        write_errors = []
+        read_results = []
+        read_errors = []
+        read_done = threading.Event()
+
+        def do_write():
+            try:
+                write_results.append(
+                    writer.write_file(paths["out.txt"], b"confirmed content"))
+            except Exception as exc:
+                write_errors.append(exc)
+
+        def do_read():
+            try:
+                read_results.append(reader.read_file(paths["granted.txt"]))
+            except Exception as exc:
+                read_errors.append(exc)
+            finally:
+                read_done.set()
+
+        write_thread = threading.Thread(target=do_write, daemon=True)
+        read_thread = None
+        write_thread.start()
+        try:
+            self.assertTrue(prompt_started.wait(2),
+                            "write never reached its confirmation prompt")
+            read_thread = threading.Thread(target=do_read, daemon=True)
+            read_thread.start()
+            self.assertTrue(
+                read_done.wait(1.5),
+                "a pending write confirmation blocked an unrelated broker read")
+            self.assertEqual(read_results, [b"hello granted"])
+            self.assertEqual(read_errors, [])
+        finally:
+            # Always release the prompt so a failing regression cannot strand
+            # a worker until its test-only timeout.
+            approve_write.set()
+            write_thread.join(5)
+            if read_thread is not None:
+                read_thread.join(5)
+
+        self.assertFalse(write_thread.is_alive(), "write request did not finish")
+        self.assertFalse(write_errors, f"write request failed: {write_errors}")
+        self.assertEqual(len(write_results), 1)
+        self.assertEqual(write_results[0]["status"], "executed")
+
 if __name__ == "__main__":
     unittest.main()
