@@ -273,7 +273,7 @@ Build stage:
 
 QEMU live-session stage:
 * The final gate passed with `qemu_result=PASS` and a non-blank
-  1280x800 screenshot. The QEMU evidence artifact
+  screenshot. The QEMU evidence artifact
   `xor-qemu-evidence-40737390213` is 1,604,611,366 bytes.
 * As before, this stage boots the extracted kernel/initrd directly; it is
   not a firmware/bootloader menu test.

@@ -55,7 +55,7 @@ Modern operating systems leak user data by default, grant broad ambient permissi
 | **Unit Verification** | `112 / 112 PASS` | 96 broker security tests + 16 desktop/assistant gate suites passing |
 | **Adversarial Corpus** | `200 / 200 PASS` | 100 out-of-grant attempts, 50 injection twins, 50 legitimate operations |
 | **Live ISO Image** | `VERIFIED` | 1.731 GiB live hybrid ISO (`SHA-256: 9c9150eca7fe7783508e6e891a69025f1c6f558f296a7391e4d1ade9cba49a85`) |
-| **QEMU Live Display** | `VERIFIED BOOT` | [Actions Run 40737390213](https://github.com/Rishidev-20thcenturey/XOR-OPERATING-SYSTEM-/actions/runs/40737390213) `qemu_result=PASS`, non-blank 1280x800 screenshot captured |
+| **QEMU Live Display** | `VERIFIED BOOT` | [Actions Run 40737390213](https://github.com/Rishidev-20thcenturey/XOR-OPERATING-SYSTEM-/actions/runs/40737390213) `qemu_result=PASS`, non-blank screenshot captured |
 | **Install-to-Disk** | `VERIFIED` | Same run installed to a 20 GiB virtio disk and booted the installed disk again (`result=PASS`) |
 | **Firmware/Bootloader** | `IN PROGRESS` | Extracted kernel/initrd boot and SeaBIOS disk boot validated; full UEFI/OVMF menu validation is next |
 
