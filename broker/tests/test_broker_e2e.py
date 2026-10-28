@@ -1011,6 +1011,19 @@ class TestAuditHardening(BrokerCase):
         with self.assertRaises(AuditIntegrityError):
             AuditLog(link)
 
+    def test_dangling_symlinked_audit_path_fails_closed_everywhere(self):
+        """A dangling audit symlink must never look like an empty new log."""
+        path = os.path.join(self.root, "audit.jsonl")
+        missing_target = os.path.join(self.root, "missing-target.jsonl")
+        os.symlink(missing_target, path)
+
+        with self.assertRaises(AuditIntegrityError):
+            AuditLog(path)
+        with self.assertRaises(AuditIntegrityError):
+            list(read_records(path))
+        with self.assertRaises(AuditIntegrityError):
+            verify_chain(path)
+
     def test_executed_counts_refuse_hash_invalid_record(self):
         path = os.path.join(self.root, "audit.jsonl")
         log = AuditLog(path)
