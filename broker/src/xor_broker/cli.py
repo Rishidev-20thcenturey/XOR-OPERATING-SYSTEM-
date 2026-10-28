@@ -12,13 +12,23 @@ from . import __version__
 from .audit import AuditLog, read_records, verify_chain
 from .broker import Broker
 from .confirm import CliConfirmation, ConfirmationManager
-from .config import default_audit_path, default_manifest_path, default_socket_path
-from .manifest import ManifestError, load_manifest, open_manifest_fd
+from .config import (
+    default_audit_path, default_manifest_path, default_socket_path,
+    default_token_dir,
+)
+from .manifest import (
+    ManifestError, add_capability, grant_for_selected_file, load_manifest,
+    open_manifest_fd, remove_capability,
+)
 from .models import ActionRequest, Operation
 from .policy import PolicyEngine
+from .sandbox import SandboxConfig, build_bubblewrap_args
+from .tokens import TokenStore
 
 
-def build_broker(manifest_path: str, audit_path: str, provider=None) -> Broker:
+def build_broker(manifest_path: str, audit_path: str, provider=None,
+                 tool_tokens=None, require_tokens=False,
+                 token_store=None) -> Broker:
     capabilities = load_manifest(manifest_path)
     audit = AuditLog(audit_path)
     # max_uses must survive a daemon restart / a one-shot CLI request.
@@ -31,6 +41,9 @@ def build_broker(manifest_path: str, audit_path: str, provider=None) -> Broker:
         PolicyEngine(capabilities),
         ConfirmationManager(provider or CliConfirmation()),
         audit,
+        tool_tokens=tool_tokens,
+        require_tool_tokens=require_tokens,
+        token_store=token_store,
     )
 
 
@@ -181,7 +194,10 @@ def cmd_init(args) -> int:
 def cmd_serve(args) -> int:
     from .server import serve
 
-    broker = build_broker(args.manifest, args.audit, provider=_provider(args.confirm))
+    token_store = TokenStore(args.token_dir) if args.token_dir else None
+    broker = build_broker(
+        args.manifest, args.audit, provider=_provider(args.confirm),
+        token_store=token_store, require_tokens=args.require_tokens)
     print(f"xor-broker listening on {args.socket} (confirm={args.confirm}, Ctrl-C to stop)")
     try:
         serve(broker, args.socket)
@@ -191,11 +207,15 @@ def cmd_serve(args) -> int:
 
 
 def cmd_request(args) -> int:
-    broker = build_broker(args.manifest, args.audit)
+    token_store = TokenStore(args.token_dir) if args.token_dir else None
+    broker = build_broker(args.manifest, args.audit, token_store=token_store)
+    token = args.token or os.environ.get("XOR_TOOL_TOKEN")
+    if not token and args.token_dir:
+        token = token_store.get(args.tool)
     content = args.content.encode() if args.content is not None else None
     outcome = broker.handle(ActionRequest(
         args.tool, Operation(args.operation), args.path,
-        content=content, description=args.description))
+        content=content, description=args.description, tool_token=token))
     print(f"status={outcome.status.value} reason={outcome.reason.value} "
           f"capability={outcome.capability_id}")
     if outcome.data is not None:
@@ -203,6 +223,61 @@ def cmd_request(args) -> int:
     if outcome.listing is not None:
         print("\n".join(outcome.listing))
     return 0 if outcome.status.value == "executed" else 3
+
+
+def cmd_token(args) -> int:
+    store = TokenStore(args.token_dir)
+    if args.token_cmd == "revoke":
+        store.revoke(args.tool)
+        return 0
+    token = store.issue(args.tool)
+    if not args.quiet:
+        print(token)
+    return 0
+
+
+def cmd_launch(args) -> int:
+    store = TokenStore(args.token_dir)
+    store.issue(args.tool)
+    command = list(args.command)
+    if command and command[0] == "--":
+        command = command[1:]
+    config = SandboxConfig(
+        tool=args.tool,
+        token_file=store.path_for(args.tool),
+        socket_path=args.socket,
+        command=command,
+        network_isolated=not args.share_network,
+    )
+    try:
+        argv = build_bubblewrap_args(config)
+    except (OSError, ValueError, RuntimeError) as exc:
+        print(f"cannot launch sandbox: {exc}", file=sys.stderr)
+        return 2
+    # exec so bwrap's --die-with-parent tracks the caller, not this short
+    # lived launcher process.
+    try:
+        os.execv(argv[0], argv)
+    except OSError as exc:
+        print(f"cannot execute bubblewrap: {exc}", file=sys.stderr)
+        return 2
+    return 0
+
+
+def cmd_grant(args) -> int:
+    capability_id = args.capability_id or f"grant-{args.tool}-{os.urandom(4).hex()}"
+    cap = grant_for_selected_file(
+        args.tool, Operation(args.operation), args.path, capability_id)
+    add_capability(args.manifest, cap)
+    print(f"granted {capability_id}: {cap.tool} {cap.operation.value} "
+          f"{cap.resource.path}")
+    return 0
+
+
+def cmd_revoke(args) -> int:
+    remove_capability(args.manifest, args.capability_id)
+    print(f"revoked {args.capability_id}")
+    return 0
 
 
 def cmd_audit(args) -> int:
@@ -245,6 +320,9 @@ def main(argv=None) -> int:
     serve_p.add_argument("--socket", default=default_socket_path())
     serve_p.add_argument("--confirm", default="cli", choices=["cli", "gtk", "deny"],
                          help="write-confirmation UI (gtk on the desktop)")
+    serve_p.add_argument("--token-dir", help="directory of per-tool bearer tokens")
+    serve_p.add_argument("--require-tokens", action="store_true",
+                         help="deny tools without a registered token")
     serve_p.set_defaults(fn=cmd_serve)
 
     req = sub.add_parser("request", help="make one broker request")
@@ -254,7 +332,39 @@ def main(argv=None) -> int:
     req.add_argument("--path", required=True)
     req.add_argument("--content")
     req.add_argument("--description", default="")
+    req.add_argument("--token")
+    req.add_argument("--token-dir", help="look up the tool token in this directory")
     req.set_defaults(fn=cmd_request)
+
+    token_p = sub.add_parser("token", help="issue or revoke a tool token")
+    token_p.add_argument("token_cmd", choices=["issue", "revoke"])
+    token_p.add_argument("tool")
+    token_p.add_argument("--token-dir", default=default_token_dir())
+    token_p.add_argument("--quiet", action="store_true")
+    token_p.set_defaults(fn=cmd_token)
+
+    launch_p = sub.add_parser("launch", help="run a command in a bwrap sandbox")
+    launch_p.add_argument("--tool", required=True)
+    launch_p.add_argument("--token-dir", default=default_token_dir())
+    launch_p.add_argument("--socket", default=default_socket_path())
+    launch_p.add_argument("--share-network", action="store_true")
+    launch_p.add_argument("command", nargs=argparse.REMAINDER)
+    launch_p.set_defaults(fn=cmd_launch)
+
+    grant_p = sub.add_parser("grant", help="grant one selected file/directory")
+    grant_p.add_argument("--tool", required=True)
+    grant_p.add_argument("--operation", required=True,
+                         choices=[op.value for op in Operation
+                                  if op in (Operation.READ_FILE,
+                                            Operation.WRITE_FILE,
+                                            Operation.LIST_DIR)])
+    grant_p.add_argument("--path", required=True)
+    grant_p.add_argument("--capability-id")
+    grant_p.set_defaults(fn=cmd_grant)
+
+    revoke_p = sub.add_parser("revoke", help="revoke a capability by id")
+    revoke_p.add_argument("capability_id")
+    revoke_p.set_defaults(fn=cmd_revoke)
 
     audit_p = sub.add_parser("audit", help="inspect the audit log")
     audit_p.add_argument("audit_cmd", choices=["show", "verify"])

@@ -16,6 +16,9 @@ false success.
 cd broker
 python3 -m pip install -e .        # or just: PYTHONPATH=src python3 -m xor_broker.cli
 xor-broker demo                    # self-contained demo in a temp sandbox
+xor-broker token issue demo-reader # create a per-tool bearer token
+xor-broker serve --token-dir "$HOME/.local/state/xor/broker/tokens" --require-tokens
+xor-broker launch --tool demo-reader -- xor-demo-reader
 python3 -m pytest                  # unit tests (also runs under unittest)
 ```
 
@@ -80,14 +83,24 @@ can be **denied explicitly and audited**; manifests cannot grant them.
   cannot be replayed (single use), and expires.
 - Untrusted document text (`untrusted_context`) is never read by the
   policy engine — see the 200-scenario corpus in `../security/`.
+- With a token directory configured, every tool must present its own
+  random bearer token. Tokens are stored in a private `0700` directory as
+  `0600` files, compared in constant time, and rechecked after a
+  confirmation returns; revoking a token during the prompt blocks the
+  write. A sandbox launcher (`xor-broker launch`) bind-mounts only that
+  tool's token file, not the token directory or host `/tmp`.
 
 ## Honest limits
 
 The broker mediates requests made **through its API**. It does not
-intercept syscalls of arbitrary same-user processes, and tool identity
-over the Unix socket is self-declared in the baseline. Process
-isolation (bubblewrap/Flatpak portals) for the future assistant runner
-is Milestone 4. See `../docs/THREAT_MODEL.md`.
+intercept syscalls of arbitrary same-user processes. Bearer tokens stop
+one cooperating tool from claiming another tool's name, but they are not
+bound to peer PID/UID or a sandbox instance: a same-UID process that can
+read the token directory can still impersonate a tool. `xor-broker
+launch` is an opt-in bubblewrap profile (private namespaces, cleared
+environment, tmpfs home/tmp, broker socket and its own token file only);
+it is not applied to every tool or the future assistant runner yet.
+See `../docs/THREAT_MODEL.md`.
 
 Execution and audit append are not crash-atomic. A crash after the
 action but before the durable append can leave an execution uncounted
@@ -127,5 +140,6 @@ are not locked.
 `models.py` typed API · `policy.py` default-deny engine · `paths.py`
 FD-safe filesystem access · `executor.py` the only file-touching code ·
 `confirm.py` confirmation providers/tokens · `audit.py` hash-chained log ·
-`manifest.py` grant loading/validation · `server.py` Unix-socket daemon +
-client · `cli.py` `xor-broker` command.
+`manifest.py` grant loading/validation · `tokens.py` private per-tool
+bearer-token store · `sandbox.py` opt-in bubblewrap argv/launcher ·
+`server.py` Unix-socket daemon + client · `cli.py` `xor-broker` command.

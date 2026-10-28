@@ -8,8 +8,10 @@ Status key: ✅ implemented & tested · 🧪 implemented, partly verified ·
 * ✅ Repo layout, broker skeleton with one real scoped capability + audit
 * ✅ Debian Live Build config (trixie/amd64/XFCE), install hook, LightDM autologin
 * ✅ `tools/build-iso.sh`, `tools/run-qemu.sh` (fixed virtio target)
-* 🧪 ISO **build + QEMU boot unverified in the dev sandbox** → first task
-  on a team machine; scripts fail with clear guidance until then
+* ✅ ISO build + bounded QEMU/TCG live-session boot verified in GitHub
+  Actions run 40597398794; firmware/bootloader selection still unverified
+* 🧪 Install-to-disk + second boot: live installer, preseed and CI gate
+  added (`tools/test-install-qemu.sh`); awaiting a real Actions result
 
 ## Milestone 1 — Permission broker ✅ (acceptance criteria pass)
 
@@ -31,8 +33,9 @@ Status key: ✅ implemented & tested · 🧪 implemented, partly verified ·
   and headless CLIs are tested, GTK placement/focus/Wnck still need a booted ISO
 * ✅ Royal Aurora wallpaper set, glass-X logo, shell/control menu entries,
   broker + Aurora autostart, visible demo
-* ⬜ File-chooser grant flow in GTK (library support exists:
-  `manifest.grant_for_selected_file` with inode pinning)
+* 🧪 File-chooser grant flow in GTK Control Centre + atomic
+  manifest grant/revoke; headless manifest tests pass, GTK interaction
+  still needs on-desktop verification
 * ⬜ Replace fallback XFCE panel only after Aurora passes daily-use,
   multi-monitor, focus and recovery-session checks
 
@@ -46,10 +49,15 @@ Status key: ✅ implemented & tested · 🧪 implemented, partly verified ·
   calls without a separate explicit decision. Local small-model
   evaluation notes go in an ADR before any download.
 
-## Milestone 4 — Hardening & expansion ⬜
+## Milestone 4 — Hardening & expansion 🧪
 
-* Tool/assistant process isolation (bubblewrap profiles; Flatpak portal
-  investigation) and authenticated tool identity for the broker socket
+* 🧪 Opt-in bubblewrap launcher (`xor-broker launch`) with private
+  namespaces, cleared environment and only broker socket + own token
+  file; per-tool bearer tokens with revocation. Headless argv/token tests
+  pass; no on-desktop bwrap run yet, and tokens are not bound to peer
+  identity/sandbox instance.
+* ⬜ Apply the sandbox to every tool/assistant and investigate Flatpak
+  portals
 * Manifest/wire-protocol fuzzing; rate limiting; audit anchoring
   (external head-hash witness) to strengthen tamper evidence
 * Downgrade protection with monotonic counters (TPM investigation)
@@ -58,12 +66,14 @@ Status key: ✅ implemented & tested · 🧪 implemented, partly verified ·
 
 ## Three most important next tasks
 
-1. **Build & boot the ISO on a real dev machine** (`sudo tools/build-iso.sh`,
-   `tools/run-qemu.sh`); fix live-build fallout; record evidence + screenshots.
+1. **Run the install-to-disk gate** (`tools/test-install-qemu.sh`) on a
+   Linux host/Actions, then boot the installed disk through firmware on a
+   team machine.
 2. **On-desktop Milestone-2 verification**: Aurora panel/dock/launcher,
-   Command/Control Centre, GTK confirmation keyboard flow end-to-end
-   through the daemon (deny default, Esc, timeout), activity viewer and
-   demo launcher; capture screenshots and fix focus/placement issues.
-3. **Isolation spike**: run `xor-demo-reader` under bubblewrap with the
-   broker socket as its only file access; measure what breaks — this
-   de-risks Milestones 3–4 and hardens the identity story.
+   Command/Control Centre, GTK file chooser, GTK confirmation keyboard
+   flow end-to-end through the daemon (deny default, Esc, timeout),
+   activity viewer and demo launcher; capture screenshots and fix
+   focus/placement issues.
+3. **Isolation verification**: run `xor-demo-reader` under `xor-broker
+   launch` on a booted ISO, confirm only the broker socket/token file are
+   visible, and measure what breaks.

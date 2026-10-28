@@ -5,4 +5,8 @@
 # confirmations use the GTK dialog (Escape/unfocused Enter = deny).
 set -e
 xor-broker init >/dev/null 2>&1 || true
-exec xor-broker serve --confirm gtk
+TOKEN_DIR="${XOR_TOKEN_DIR:-$HOME/.local/state/xor/broker/tokens}"
+export XOR_TOKEN_DIR="$TOKEN_DIR"
+xor-broker token issue demo-reader --token-dir "$TOKEN_DIR" --quiet || true
+xor-broker token issue demo-writer --token-dir "$TOKEN_DIR" --quiet || true
+exec xor-broker serve --confirm gtk --token-dir "$TOKEN_DIR" --require-tokens

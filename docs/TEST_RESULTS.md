@@ -14,9 +14,20 @@ The latest ISO-build/QEMU evidence is from GitHub Actions run
 [40597398794](https://github.com/Rishidev-20thcenturey/XOR-OPERATING-SYSTEM-/actions/runs/40597398794),
 described in the ISO-build/QEMU section below.
 
-## Unit tests — PASS (96 in current CI; 95 in earlier local run)
+## Unit tests — PASS (110 locally on 2026-10-28; 96 in earlier CI)
 
-Latest PR CI run [40640029964](https://github.com/Rishidev-20thcenturey/XOR-OPERATING-SYSTEM-/actions/runs/40640029964) passed **96 tests**: 81 broker tests and 15 assistant/desktop tests. Both Python 3.11 and 3.12 jobs passed. Static validation, ShellCheck, build-script artifact regressions, and the 200-scenario corpus + 50 injection twins also passed; all 10 corpus acceptance criteria passed. The new dangling audit-log symlink regression is included.
+The 2026-10-28 local Termux run passed **110 tests**: **94 broker tests**
+(including the new token/sandbox/grant regression file) and **16
+assistant/desktop tests**. Static validation passed, including pyflakes,
+ShellCheck, the 200-scenario corpus + 50 injection twins, and all 10
+corpus acceptance criteria. The new tests cover private token-store
+modes/rotation/revocation, missing/wrong/non-string token denial,
+unregistered-tool denial, revocation during confirmation, malformed-wire
+audit, refusal to serve from a public socket directory, sandbox argv
+token non-disclosure, socket/token-only binds, unsafe-path rejection,
+and atomic manifest grant/revoke with inode pinning.
+
+Earlier PR CI run [40640029964](https://github.com/Rishidev-20thcenturey/XOR-OPERATING-SYSTEM-/actions/runs/40640029964) passed **96 tests**: 81 broker tests and 15 assistant/desktop tests. Both Python 3.11 and 3.12 jobs passed. Static validation, ShellCheck, build-script artifact regressions, and the 200-scenario corpus + 50 injection twins also passed; all 10 corpus acceptance criteria passed. The dangling audit-log symlink regression is included.
 
 Earlier local Termux `tools/test.sh` run (unittest fallback) → **95 passed**: 80 broker tests (including corpus-as-test), 3 assistant-gate tests and 12 desktop tests. Exact durations from that pre-regression run: 80 tests in 3.338 s, 3 tests in 0.003 s, and 12 tests in 0.040 s. Covers: default-deny
 matrix, exact file/dir scoping, traversal & symlink fail-closed (incl.
@@ -323,6 +334,7 @@ Not verified in this run:
 | Item | Blocker (verbatim) | Run instead |
 |---|---|---|
 | ISO build | Passed in GitHub Actions run 40597398794; see the ISO-build/QEMU section above for exact checksum and artifact evidence. | Local `sudo tools/build-iso.sh` remains available for a team-machine rebuild. |
+| Install-to-disk + second boot | The installer path, preseed and `tools/test-install-qemu.sh` gate are implemented, but no successful Actions run has been recorded yet. | Run the `install-to-disk` job in the ISO workflow and record the artifact/result here. |
 | Firmware/bootloader boot | The accepted QEMU gate extracts the kernel/initrd and attaches the ISO as a CD-ROM; it does not select a BIOS/UEFI bootloader. | Boot the ISO through firmware (UEFI/OVMF and BIOS) on a team machine and confirm the live session. |
 | GTK interaction | The final screenshot shows the Aurora desktop on the live ISO, but there is still no unattended interactive test for launcher focus/search, Wnck window buttons, Control Centre actions, broker GTK confirmation or Activity filters. | On the booted ISO: verify the Aurora panel/dock/launcher/Command Centre/Control Centre; run `xor-demo-writer`, verify the Deny-focused dialog, Esc denies and the 120 s timeout; open XOR Activity and check Ctrl+1–4 / Ctrl+F / Esc. Non-GTK cores and headless text/status modes are tested. |
 

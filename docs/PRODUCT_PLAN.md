@@ -52,7 +52,8 @@ A release can honestly call itself the complete XOR OS when:
 * Daily-use test on a booted desktop, then fix placement/focus/multi-monitor issues.
 * Super-key/global shortcuts through the session settings.
 * Notification aggregation, window previews and richer menu actions.
-* File-chooser capability-grant journey from launcher/Control Centre.
+* File-chooser capability-grant journey from launcher/Control Centre
+  (implemented; verify keyboard-only GTK flow on a booted ISO).
 * Decide when XFCE panel can be removed; retain a recovery session.
 
 **Exit gate:** Keyboard-only launcher/control/confirmation flows pass on a booted ISO.

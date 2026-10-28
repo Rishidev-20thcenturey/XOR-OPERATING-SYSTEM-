@@ -169,6 +169,88 @@ def load_manifest(path: str) -> List[Capability]:
     return parse_manifest(data)
 
 
+def _read_manifest_json(path: str) -> dict:
+    if not os.path.lexists(path):
+        return {"capabilities": []}
+    fd = open_manifest_fd(path)
+    try:
+        with os.fdopen(fd, "r", encoding="utf-8") as fh:
+            data = json.load(fh)
+    except json.JSONDecodeError as exc:
+        raise ManifestError(f"{path}: invalid JSON: {exc}") from exc
+    except (OSError, UnicodeError) as exc:
+        raise ManifestError(f"{path}: manifest cannot be read: {exc}") from exc
+    if not isinstance(data, dict) or not isinstance(data.get("capabilities"), list):
+        raise ManifestError("manifest must be an object with a 'capabilities' list")
+    return data
+
+
+def _write_manifest_json(path: str, data: dict) -> None:
+    # Validate before touching the existing file: a bad edit must never
+    # replace a policy the broker would then fail to load.
+    parse_manifest(data)
+    path = os.path.abspath(path)
+    directory = os.path.dirname(path)
+    os.makedirs(directory, mode=0o700, exist_ok=True)
+    temp = os.path.join(directory, f".manifest.{os.getpid()}.{os.urandom(8).hex()}.tmp")
+    fd = os.open(temp, os.O_WRONLY | os.O_CREAT | os.O_EXCL |
+                 os.O_NOFOLLOW | os.O_CLOEXEC, 0o600)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            json.dump(data, fh, indent=2)
+            fh.write("\n")
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.replace(temp, path)
+        os.chmod(path, 0o600, follow_symlinks=False)
+    finally:
+        try:
+            os.unlink(temp)
+        except FileNotFoundError:
+            pass
+
+
+def _capability_entry(cap: Capability) -> dict:
+    entry = {
+        "capability_id": cap.capability_id,
+        "tool": cap.tool,
+        "operation": cap.operation.value,
+        "resource": {"type": cap.resource.kind.value, "path": cap.resource.path},
+        "rights": sorted(cap.rights),
+    }
+    if cap.expires_at is not None:
+        entry["expires_at"] = cap.expires_at.isoformat()
+    if cap.max_uses is not None:
+        entry["max_uses"] = cap.max_uses
+    if cap.pin_dev is not None:
+        entry["pin_dev"] = cap.pin_dev
+    if cap.pin_ino is not None:
+        entry["pin_ino"] = cap.pin_ino
+    return entry
+
+
+def add_capability(path: str, capability: Capability) -> None:
+    """Append one validated grant to a manifest atomically."""
+    data = _read_manifest_json(path)
+    if any(entry.get("capability_id") == capability.capability_id
+           for entry in data["capabilities"] if isinstance(entry, dict)):
+        raise ManifestError(f"capability_id already exists: {capability.capability_id}")
+    data["capabilities"].append(_capability_entry(capability))
+    _write_manifest_json(path, data)
+
+
+def remove_capability(path: str, capability_id: str) -> None:
+    """Remove one grant by id, leaving the rest of the manifest untouched."""
+    data = _read_manifest_json(path)
+    kept = [entry for entry in data["capabilities"]
+            if not (isinstance(entry, dict)
+                    and entry.get("capability_id") == capability_id)]
+    if len(kept) == len(data["capabilities"]):
+        raise ManifestError(f"capability_id not found: {capability_id}")
+    data["capabilities"] = kept
+    _write_manifest_json(path, data)
+
+
 def grant_for_selected_file(tool: str, operation: Operation, selected_path: str,
                             capability_id: str) -> Capability:
     """Build a narrowly scoped capability from a user selection.

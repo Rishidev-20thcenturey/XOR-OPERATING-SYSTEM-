@@ -12,6 +12,7 @@ on:
       - 'tools/build-iso.sh'
       - 'tools/run-qemu.sh'
       - 'tools/check-packages.py'
+      - 'tools/test-install-qemu.sh'
       - 'os/live-build/**'
       - 'broker/**'
       - 'desktop/**'
@@ -428,3 +429,62 @@ jobs:
             exit 1
           fi
           echo "ISO build succeeded and QEMU reached the graphical target with a non-blank screenshot."
+
+  install-to-disk:
+    name: Install ISO to disk and boot the installed disk
+    needs: build-and-smoke-test
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install QEMU, ISO and disk inspection tools
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            qemu-system-x86 qemu-utils xorriso
+
+      - name: Download the built ISO
+        uses: actions/download-artifact@v4
+        with:
+          name: xor-iso-image-${{ github.run_id }}
+          path: iso
+
+      - name: Install to a disposable virtio disk, then boot it again
+        id: install
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -uo pipefail
+          iso=$(find iso -maxdepth 1 -type f -name '*.iso' | head -n1)
+          if [ -z "$iso" ]; then
+            echo "::error::No ISO found in the downloaded artifact"
+            exit 1
+          fi
+          mkdir -p install-evidence
+          sh tools/test-install-qemu.sh "$iso" install-evidence
+          result=$(sed -n 's/^result=//p' install-evidence/result.txt | head -n1)
+          echo "result=${result:-FAIL}" >> "$GITHUB_OUTPUT"
+
+      - name: Upload install and second-boot evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: xor-install-evidence-${{ github.run_id }}
+          path: install-evidence/
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Fail unless the ISO installed and the disk booted a second time
+        if: always()
+        shell: bash
+        env:
+          INSTALL_RESULT: ${{ steps.install.outputs.result }}
+        run: |
+          echo "install_result=$INSTALL_RESULT"
+          if [ "$INSTALL_RESULT" != "PASS" ]; then
+            echo "::error::Install/second-boot result was '$INSTALL_RESULT', not PASS. See xor-install-evidence."
+            exit 1
+          fi
+          echo "ISO installed to disk and the installed disk booted again."

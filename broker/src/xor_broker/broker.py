@@ -23,6 +23,9 @@ action but before the durable append can undercount ``max_uses``.
 
 from __future__ import annotations
 
+import secrets
+from typing import Optional
+
 from . import executor
 from .audit import AuditIntegrityError, AuditLog
 from .confirm import ConfirmationManager, make_preview
@@ -39,12 +42,72 @@ from .policy import PolicyEngine
 
 class Broker:
     def __init__(self, policy: PolicyEngine, confirmations: ConfirmationManager,
-                 audit: AuditLog):
+                 audit: AuditLog,
+                 tool_tokens: Optional[dict[str, str]] = None,
+                 require_tool_tokens: bool = False,
+                 token_store=None):
         self.policy = policy
         self.confirmations = confirmations
         self.audit = audit
+        self._tool_tokens: dict[str, str] = dict(tool_tokens or {})
+        for tool, token in self._tool_tokens.items():
+            if not isinstance(tool, str) or not tool or not isinstance(token, str) or not token:
+                raise ValueError("tool_tokens must map non-empty strings to non-empty strings")
+        self.token_store = token_store
+        # A configured token source means every tool must authenticate, even
+        # if the caller forgot the explicit --require-tokens switch.
+        self.require_tool_tokens = bool(
+            require_tool_tokens or self._tool_tokens or token_store is not None)
+
+    def register_tool_token(self, tool: str, token: Optional[str] = None) -> str:
+        """Register a cryptographically random session token for a tool."""
+        if token is None:
+            token = secrets.token_hex(32)
+        if not isinstance(tool, str) or not tool:
+            raise ValueError("tool name must be a non-empty string")
+        if not isinstance(token, str) or not token:
+            raise ValueError("token must be a non-empty string")
+        if self.token_store is not None:
+            return self.token_store.issue(tool, token)
+        self._tool_tokens[tool] = token
+        return token
+
+    def revoke_tool_token(self, tool: str) -> None:
+        """Revoke any active session token for a tool."""
+        self._tool_tokens.pop(tool, None)
+        if self.token_store is not None:
+            self.token_store.revoke(tool)
+
+    def _registered_token(self, tool: str) -> Optional[str]:
+        registered = self._tool_tokens.get(tool)
+        if registered is None and self.token_store is not None:
+            registered = self.token_store.get(tool)
+        return registered
+
+    def verify_tool_identity(self, request: ActionRequest) -> bool:
+        """Verify that request.tool matches its registered token."""
+        if not isinstance(request.tool, str) or not request.tool:
+            return False
+        registered = self._registered_token(request.tool)
+        if registered is not None:
+            token = request.tool_token
+            return (isinstance(token, str) and bool(token)
+                    and secrets.compare_digest(token, registered))
+        if self.require_tool_tokens:
+            return False
+        return True
 
     def handle(self, request: ActionRequest) -> Outcome:
+        if not self.verify_tool_identity(request):
+            outcome = Outcome(
+                OutcomeStatus.DENIED_POLICY,
+                ReasonCode.UNAUTHENTICATED_TOOL,
+                request.request_id,
+                None,
+                error=f"tool {request.tool!r} identity verification failed (invalid or missing token)",
+            )
+            return self._audit_or_failure(request, None, outcome, None)
+
         decision = None
         try:
             with self.audit.execution_lock():
@@ -86,6 +149,19 @@ class Broker:
         decision = None
         try:
             with self.audit.execution_lock():
+                # Revocation while the user was deciding must take effect
+                # before the action executes.
+                if not self.verify_tool_identity(request):
+                    outcome = Outcome(
+                        OutcomeStatus.DENIED_POLICY,
+                        ReasonCode.UNAUTHENTICATED_TOOL,
+                        request.request_id,
+                        None,
+                        error=f"tool {request.tool!r} token was revoked while confirmation was pending",
+                    )
+                    return self._audit_or_failure(
+                        request, None, outcome, confirmation_label)
+
                 # Another request may have consumed this capability while the
                 # prompt was open.  Refresh and re-evaluate before execution.
                 self._refresh_uses()
@@ -194,6 +270,21 @@ class Broker:
             request.request_id,
             capability_id,
             error=f"{detail} ({type(error).__name__}: {error})",
+        )
+
+    def record_malformed(self, error: str) -> None:
+        """Audit a wire request that could not be turned into an ActionRequest."""
+        self.audit.append(
+            request_id="malformed",
+            tool="(malformed)",
+            operation="malformed",
+            resource="(none)",
+            params_digest=None,
+            decision="deny",
+            reason=ReasonCode.EXECUTION_ERROR.value,
+            confirmation=None,
+            result=OutcomeStatus.FAILED.value,
+            capability_id=None,
         )
 
     def _audit(self, request, decision, outcome, confirmation_label) -> None:
