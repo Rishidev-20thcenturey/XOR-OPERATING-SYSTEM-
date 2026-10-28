@@ -9,9 +9,10 @@ Status key: ✅ implemented & tested · 🧪 implemented, partly verified ·
 * ✅ Debian Live Build config (trixie/amd64/XFCE), install hook, LightDM autologin
 * ✅ `tools/build-iso.sh`, `tools/run-qemu.sh` (fixed virtio target)
 * ✅ ISO build + bounded QEMU/TCG live-session boot verified in GitHub
-  Actions run 40597398794; firmware/bootloader selection still unverified
-* 🧪 Install-to-disk + second boot: live installer, preseed and CI gate
-  added (`tools/test-install-qemu.sh`); awaiting a real Actions result
+  Actions run 40737390213; firmware/bootloader selection still unverified
+* ✅ Install-to-disk + second boot verified in the same run (`result=PASS`,
+  `install_result=PASS`, `second_boot_result=PASS`); interactive GTK QA
+  still open
 
 ## Milestone 1 — Permission broker ✅ (acceptance criteria pass)
 

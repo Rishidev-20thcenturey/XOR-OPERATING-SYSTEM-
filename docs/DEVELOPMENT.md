@@ -83,13 +83,16 @@ bounded QEMU/TCG direct-kernel boot check. It uploads build evidence, the
 ISO, QEMU logs and a screenshot attempt, then fails unless the build
 succeeded and QEMU returned `PASS`.
 
-The accepted cloud run (2026-10-27, workflow run 40597398794, commit
-`26e87fdddc8016ece8cadb0d24d1d971d1ba9eb3`) built and checksum-verified
-the ISO and passed the QEMU/TCG live-session gate. The captured 1280×800
-screenshot shows the Aurora panel/dock and Royal Aurora wallpaper. The job
-boots the extracted kernel/initrd directly, so firmware/bootloader
-selection and interactive GTK QA remain follow-up work; see
-`docs/TEST_RESULTS.md` for the exact evidence and caveats.
+The accepted cloud run (2026-10-28, workflow run 40737390213, commit
+`c200e64c509f34238fa3d2cb9d6857bf010bfc1a`) built and checksum-verified
+the ISO, passed the QEMU/TCG live-session gate, installed the ISO to a
+20 GiB virtio disk, and booted that installed disk again (`result=PASS`,
+`install_result=PASS`, `second_boot_result=PASS`). The earlier accepted
+run (40597398794) captured the Aurora panel/dock and Royal Aurora
+wallpaper; the new run's screenshot gate passed as non-blank. Both jobs
+boot kernels directly, so firmware/bootloader selection and interactive
+GTK QA remain follow-up work; see `docs/TEST_RESULTS.md` for the exact
+evidence and caveats.
 
 ## Where new work belongs
 

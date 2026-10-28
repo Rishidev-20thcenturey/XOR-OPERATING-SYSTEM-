@@ -37,6 +37,10 @@ A release can honestly call itself the complete XOR OS when:
 
 **Exit gate:** Boot-to-desktop evidence + broker demo via GTK dialog.
 
+**Status (2026-10-28):** ISO build, live QEMU boot, install-to-disk and
+second boot passed in Actions run 40737390213. Firmware/bootloader
+selection and interactive GTK QA remain open.
+
 ## Phase 2 — XOR Shell “Aurora”
 
 **Now implemented as a preview layer over XFCE/X11:**

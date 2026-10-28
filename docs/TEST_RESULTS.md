@@ -10,9 +10,9 @@ the name/dependency preflight; an actual Debian `lb build` ran in the
 GitHub Actions Debian trixie container, not on Termux. Everything
 verifiable in each environment was run; what could not run is listed as
 NOT RUN with the exact blocker. Reproduce locally with `tools/test.sh`.
-The latest ISO-build/QEMU evidence is from GitHub Actions run
-[40597398794](https://github.com/Rishidev-20thcenturey/XOR-OPERATING-SYSTEM-/actions/runs/40597398794),
-described in the ISO-build/QEMU section below.
+The latest ISO-build/QEMU/install evidence is from GitHub Actions run
+[40737390213](https://github.com/Rishidev-20thcenturey/XOR-OPERATING-SYSTEM-/actions/runs/40737390213),
+described in the ISO-build/QEMU/install-to-disk section below.
 
 ## Unit tests — PASS (112 locally on 2026-10-28; 96 in earlier CI)
 
@@ -245,8 +245,55 @@ and success-with-no-new-ISO exits failure. The stale ISO is preserved in
 all cases; nothing is silently deleted.
 
 An actual `lb build` was **not** run in the Termux sandbox, so the fake-lb
-claim is limited to script control flow. The final GitHub Actions ISO build
-in run 40597398794 did run the real Debian Live Build and succeeded.
+claim is limited to script control flow. The latest GitHub Actions ISO
+build in run 40737390213 did run the real Debian Live Build and succeeded.
+
+## GitHub Actions ISO build, QEMU live-session and install-to-disk gate — 2026-10-28 (run 40737390213)
+
+Commit under test: `c200e64c509f34238fa3d2cb9d6857bf010bfc1a` on
+`feat/sandboxed-app-launch-prototype`.
+
+Workflow: `.github/workflows/iso-build.yml`, run
+[40737390213](https://github.com/Rishidev-20thcenturey/XOR-OPERATING-SYSTEM-/actions/runs/40737390213).
+Created `2026-10-28T17:36:54Z`, completed `2026-10-28T18:16:05Z` with
+conclusion **`success`**. The build-and-smoke job took 16m2s; the
+install-to-disk job took 21m43s.
+
+Build stage:
+* ISO size: 1,858,633,728 bytes (1.731 GiB).
+* ISO SHA-256: `9c9150eca7fe7783508e6e891a69025f1c6f558f296a7391e4d1ade9cba49a85`.
+* `BUILD-MANIFEST.txt` SHA-256:
+  `3dff16eaea1eb9ef8d0082ef73333494af85b12b499d34c570515fe812a17e1e`.
+* Debian Live Build `20250505+deb13u1`; the log ends
+  `P: Build completed successfully` and shows
+  `Begin including local preseeds...`, so `/install/preseed.cfg` is in the
+  ISO.
+* Build evidence artifact `xor-build-evidence-40737390213` is 310,103
+  bytes; the ISO artifact is 1,844,404,728 bytes.
+
+QEMU live-session stage:
+* The final gate passed with `qemu_result=PASS` and a non-blank
+  1280x800 screenshot. The QEMU evidence artifact
+  `xor-qemu-evidence-40737390213` is 1,604,611,366 bytes.
+* As before, this stage boots the extracted kernel/initrd directly; it is
+  not a firmware/bootloader menu test.
+
+Install-to-disk and second boot:
+* `tools/test-install-qemu.sh` booted the text installer from
+  `/install/vmlinuz` and `/install/initrd.gz` with
+  `preseed/file=/cdrom/install/preseed.cfg` on a fresh 20 GiB qcow2
+  virtio disk (`-machine q35,accel=tcg`, no KVM).
+* Installer boot began `2026-10-28T17:58:02Z`; the installed disk was
+  booted at `2026-10-28T18:15:22Z` with `-boot order=c` and the CD-ROM
+  removed; the script recorded the result at `18:15:58Z`.
+* `result=PASS`, `install_result=PASS`, `second_boot_result=PASS`.
+* Evidence artifact `xor-install-evidence-40737390213` is 114,352,170
+  bytes and contains `result.txt`, `install-serial.log`,
+  `second-boot-serial.log` and the QEMU input logs; the 20 GiB disk is
+  excluded.
+* This proves install-to-disk and a second boot from that disk. It does
+  not prove ISO firmware/UEFI boot menus, Secure Boot, or interactive GTK
+  behaviour.
 
 ## GitHub Actions ISO build and QEMU live-session gate — 2026-10-27 (run 40597398794)
 
@@ -331,19 +378,20 @@ Not verified in this run:
   Control Centre `--text` prints appearance, host and broker summary.
   The Royal Aurora wallpaper and SVG logo were visually inspected.
 
-## NOT RUN — blocked by sandbox, commands ready
+## NOT RUN locally — blocked by sandbox, commands ready
 
 | Item | Blocker (verbatim) | Run instead |
 |---|---|---|
-| ISO build | Passed in GitHub Actions run 40597398794; see the ISO-build/QEMU section above for exact checksum and artifact evidence. | Local `sudo tools/build-iso.sh` remains available for a team-machine rebuild. |
-| Install-to-disk + second boot | The installer path, preseed and `tools/test-install-qemu.sh` gate are implemented, but no successful Actions run has been recorded yet. | Run the `install-to-disk` job in the ISO workflow and record the artifact/result here. |
-| Firmware/bootloader boot | The accepted QEMU gate extracts the kernel/initrd and attaches the ISO as a CD-ROM; it does not select a BIOS/UEFI bootloader. | Boot the ISO through firmware (UEFI/OVMF and BIOS) on a team machine and confirm the live session. |
+| ISO build (local Termux) | Passed in GitHub Actions run 40737390213; see the ISO-build/QEMU/install section above for exact checksum and artifact evidence. Termux has no `lb`. | Local `sudo tools/build-iso.sh` remains available for a team-machine rebuild. |
+| Install-to-disk + second boot (local Termux) | Passed in GitHub Actions run 40737390213 (`result=PASS`, `install_result=PASS`, `second_boot_result=PASS`); Termux has no QEMU. | Re-run the `install-to-disk` job for a new ISO; the serial logs are in `xor-install-evidence-40737390213`. |
+| Firmware/bootloader boot | The accepted QEMU gate extracts the kernel/initrd and attaches the ISO as a CD-ROM; the install gate boots the installer kernel directly and the second boot uses SeaBIOS from the installed disk. No UEFI/OVMF menu or Secure Boot. | Boot the ISO through firmware (UEFI/OVMF and BIOS) on a team machine and confirm the live session. |
 | GTK interaction | The final screenshot shows the Aurora desktop on the live ISO, but there is still no unattended interactive test for launcher focus/search, Wnck window buttons, Control Centre actions, broker GTK confirmation or Activity filters. | On the booted ISO: verify the Aurora panel/dock/launcher/Command Centre/Control Centre; run `xor-demo-writer`, verify the Deny-focused dialog, Esc denies and the 120 s timeout; open XOR Activity and check Ctrl+1–4 / Ctrl+F / Esc. Non-GTK cores and headless text/status modes are tested. |
 
 Consequence, stated plainly: the ISO builds, is checksummed and
-artifact-backed, and the bounded QEMU/TCG direct-kernel boot now reaches a
-live XFCE session with the Aurora shell and Royal Aurora wallpaper visibly
-confirmed. That is a real live-session pass, not a daily-use claim:
+artifact-backed, the bounded QEMU/TCG direct-kernel boot reaches a live
+XFCE session with the Aurora shell and Royal Aurora wallpaper visibly
+confirmed, and the installer writes that system to a virtio disk that boots
+again. That is a real build/live/install pass, not a daily-use claim:
 firmware/bootloader selection, interactive GTK QA and broad hardware
 verification remain open. The first team-machine task is to boot the ISO
 through firmware and exercise Aurora and broker confirmations interactively.

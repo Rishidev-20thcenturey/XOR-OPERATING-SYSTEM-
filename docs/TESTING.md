@@ -37,10 +37,13 @@ python3 tools/check-packages.py
 This catches nonexistent/case-wrong names and missing dependency names
 before a long image build. It is a name-level closure check; apt/lb
 remains authoritative for versions, conflicts and architecture. The final
-GitHub Actions ISO run (40597398794) built and checksum-verified the ISO and
-passed the bounded QEMU/TCG live-session gate with a visible Aurora
-screenshot. The QEMU job boots the extracted kernel/initrd directly, so it
-is not a firmware/bootloader test.
+GitHub Actions ISO run (40737390213) built and checksum-verified the ISO,
+passed the bounded QEMU/TCG live-session gate with a non-blank screenshot,
+and installed the ISO to a 20 GiB virtio disk that booted again
+(`result=PASS`, `install_result=PASS`, `second_boot_result=PASS`). The
+live QEMU job boots the extracted kernel/initrd directly, and the install
+job boots the installer kernel directly, so neither is a
+firmware/bootloader menu test.
 
 ## The 200-scenario corpus
 
