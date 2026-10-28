@@ -29,6 +29,7 @@ import json
 import os
 import socket
 import struct
+from concurrent.futures import ThreadPoolExecutor
 
 from .broker import Broker
 from .models import ActionRequest, Operation
@@ -85,15 +86,13 @@ def serve(broker: Broker, socket_path: str,
         os.chmod(socket_path, 0o600)
         srv.listen(8)
         try:
-            while True:
-                conn, _ = srv.accept()
-                with conn:
-                    try:
-                        conn.settimeout(connection_timeout)
-                        _handle_conn(broker, conn)
-                    except (ConnectionError, OSError):
-                        # A timed-out/broken client must not kill the daemon.
-                        continue
+            # A confirmation can wait up to 120 seconds.  Do not make the
+            # accept loop wait for that one client: bounded workers let other
+            # requests (especially reads) progress while the user decides.
+            with ThreadPoolExecutor(max_workers=8, thread_name_prefix="xor-broker") as workers:
+                while True:
+                    conn, _ = srv.accept()
+                    workers.submit(_serve_connection, broker, conn, connection_timeout)
         finally:
             srv.close()
             if os.path.exists(socket_path):
@@ -104,6 +103,18 @@ def serve(broker: Broker, socket_path: str,
         except OSError:
             pass
         os.close(lock_fd)
+
+
+def _serve_connection(broker: Broker, conn: socket.socket,
+                      connection_timeout: float) -> None:
+    """Handle one client without blocking the listener or other workers."""
+    with conn:
+        try:
+            conn.settimeout(connection_timeout)
+            _handle_conn(broker, conn)
+        except (ConnectionError, OSError):
+            # A timed-out/broken client must not kill the daemon.
+            return
 
 
 def _handle_conn(broker: Broker, conn: socket.socket) -> None:
