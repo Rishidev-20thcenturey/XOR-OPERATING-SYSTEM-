@@ -1,186 +1,151 @@
 <p align="center">
-  <img src="desktop/theme/xor-logo.svg" width="118" alt="XOR OS glass-X logo">
+  <img src="desktop/theme/xor-logo.svg" width="100" alt="XOR OS glass-X logo">
 </p>
 
 <h1 align="center">XOR OS</h1>
 
 <p align="center">
-  <strong>Beauty with a permission boundary.</strong><br>
-  A Debian GNU/Linux desktop in the making, crowned with the original
-  <strong>Aurora Shell</strong> and protected by a default-deny permission broker.
+  <strong>A considered desktop. Explicit permissions. Security before AI.</strong><br>
+  A Debian GNU/Linux desktop prototype featuring the original Aurora Shell and a default-deny permission broker.
 </p>
 
 <p align="center">
   <a href="https://github.com/Rishidev-20thcenturey/XOR-OPERATING-SYSTEM-/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/Rishidev-20thcenturey/XOR-OPERATING-SYSTEM-/actions/workflows/ci.yml/badge.svg"></a>
-  <img alt="Debian 13 trixie" src="https://img.shields.io/badge/base-Debian%2013%20trixie-A80030">
-  <img alt="Python stdlib broker" src="https://img.shields.io/badge/broker-Python%20stdlib--only-3776AB">
-  <img alt="Security corpus: 200 scenarios" src="https://img.shields.io/badge/security%20corpus-200%20scenarios-0f766e">
+  <img alt="Debian 13 Trixie" src="https://img.shields.io/badge/base-Debian%2013%20Trixie-A80030">
+  <img alt="License MIT" src="https://img.shields.io/badge/license-MIT-blue.svg">
+  <img alt="Security corpus 200 scenarios" src="https://img.shields.io/badge/security%20corpus-200%20scenarios-0f766e">
+  <img alt="Project stage pre-alpha" src="https://img.shields.io/badge/stage-pre--alpha-orange">
 </p>
 
 <p align="center">
-  <img src="desktop/theme/wallpapers/xor-royal-aurora.jpg" alt="XOR Royal Aurora wallpaper: luminous glass ribbons forming an X over a midnight aurora">
+  <img src="desktop/theme/wallpapers/xor-royal-aurora.jpg" alt="Royal Aurora, the XOR OS visual identity">
 </p>
 
-<p align="center"><em>Royal Aurora — XOR's default wallpaper and Aurora Shell design direction. This is a design asset, not a claimed boot screenshot.</em></p>
+<p align="center"><em>Royal Aurora is a design asset and default wallpaper, not a screenshot of the running desktop.</em></p>
 
 ---
 
-## ✨ What is XOR OS?
+## Current status — 28 October 2026
 
-XOR OS is a trustworthy desktop operating system being built in the
-open by a small team with a $0 starting budget. We reuse the proven
-Linux kernel and Debian package universe instead of reinventing them,
-then put our originality where it matters:
+XOR OS is a **pre-alpha, Linux-based desktop prototype**. The Aurora desktop layer, permission broker, live-build configuration and automated test suite are in the repository's `main` branch. The reviewed hardening baseline was merged through [pull request #3](https://github.com/Rishidev-20thcenturey/XOR-OPERATING-SYSTEM-/pull/3).
 
-* a lavish, original desktop called **Aurora**;
-* a **permission broker** that mediates tool access to your files;
-* per-write user approval that cannot be replayed for another action;
-* a local, tamper-evident record of every broker decision;
-* an assistant that stays **off** until isolation and security gates pass.
-
-> **Nothing is granted implicitly.** A cooperating tool may touch only
-> the exact resource you granted, for the exact operation you granted.
-> Selecting one file never silently grants its folder, your home
-> directory, a shell or the network.
-
-This repository contains a **tested broker and OS foundation plus the
-Aurora Shell preview**. The ISO builds successfully in GitHub Actions
-(`.github/workflows/iso-build.yml`), and the bounded QEMU/TCG boot reaches
-the live XFCE session with the Aurora panel/dock and Royal Aurora wallpaper
-visually confirmed in the captured screenshot. The QEMU check boots the
-extracted kernel/initrd directly, so firmware/bootloader selection and full
-interactive GTK QA are still not claimed. The exact evidence and remaining
-limits are recorded in [`docs/TEST_RESULTS.md`](docs/TEST_RESULTS.md).
-
-## 🌌 Aurora — the XOR desktop
-
-Aurora is our original glass desktop experience, currently layered over
-the dependable XFCE/X11 session while it earns replacement status.
-
-| Aurora surface | Experience |
+| Area | Verified status |
 |---|---|
-| **Glass top panel** | XOR launcher, workspaces, live clock, active window, network & battery pills, Command Centre, Control Centre and power menu |
-| **Floating dock** | Pinned apps, large luminous icons, live running-window buttons via Wnck, Trash shortcut |
-| **Full-screen launcher** | Real app discovery, weighted search, category pills, generous app cards; Enter opens the best match, Esc closes |
-| **Command Centre** | Honest live network, battery and memory cards with shortcuts to files, sound, displays, screenshot, appearance and security |
-| **Control Centre** | Overview, Appearance, Security, System and About; four accent palettes, wallpaper picker, dock size/position/opacity, reduce-motion, broker audit summary |
-| **Royal Aurora identity** | Midnight glass wallpapers, scalable glass-X logo, teal/violet/gold CSS design tokens and visible keyboard focus |
+| Main-branch CI | **Pass** — [run 40640230528](https://github.com/Rishidev-20thcenturey/XOR-OPERATING-SYSTEM-/actions/runs/40640230528); Python 3.11, Python 3.12 and ShellCheck jobs succeeded on the merge commit |
+| Unit tests | **96 passed** in the PR CI suite: 81 broker tests and 15 assistant/desktop tests |
+| Security corpus | **Pass** — 200 scenarios plus 50 prompt-injection twin checks; all 10 recorded acceptance criteria passed |
+| ISO build and QEMU session | **Previously passed** — [run 40597398794](https://github.com/Rishidev-20thcenturey/XOR-OPERATING-SYSTEM-/actions/runs/40597398794) |
+| ISO for the current `main` revision | **Not yet rebuilt** after the final audit-log symlink fix |
+| Firmware/bootloader path | **Not yet verified** — the accepted QEMU check boots the extracted kernel and initrd directly |
+| Interactive desktop QA | **Open** — launcher focus/search, window buttons, Control Centre actions and broker confirmation dialogs need manual testing |
+| Reproducible builds | **Not claimed** — the accepted build manifest recorded uncommitted changes that still need explanation |
 
-XFCE remains available as the recovery/fallback session during the
-preview. Aurora does not pretend fake toggles work, and a shell gesture
-can never substitute for a broker permission approval.
+The accepted ISO is 1,464,860,672 bytes (1.364 GiB), with SHA-256 `2fb52d345a9209fae87a32965f32d64e5fcb75ce2ad207dd895d79034ed80603`. Its QEMU screenshot was visually inspected and showed the Aurora panel, floating dock and Royal Aurora wallpaper. This evidence proves a live graphical session under the tested setup; it does **not** establish a firmware-to-desktop boot or validate the latest merged source as a fresh ISO. See [`docs/TEST_RESULTS.md`](docs/TEST_RESULTS.md) for the evidence and caveats.
 
-Explore the design notes in [`docs/XOR_SHELL.md`](docs/XOR_SHELL.md).
+## What is XOR OS?
 
-## 🛡️ The permission broker
+XOR OS is an open-source project building a distinctive desktop experience around a practical security principle: **tools should receive only the permissions a user explicitly grants them**.
 
-The broker is the security heart of XOR. Cooperating tools send a
-typed request; the broker decides, confirms writes, executes through
-FD-anchored filesystem operations and audits the result.
+The project reuses the Linux kernel, Debian packages and XFCE/X11 session instead of attempting to write a new kernel. Its original work is focused on:
+
+- **Aurora Shell:** a glass-inspired desktop layer with a panel, floating dock, app launcher and Control Centre.
+- **Permission broker:** a typed, default-deny API for narrowly scoped file operations by cooperating tools.
+- **Explicit write approval:** each supported write requires a fresh, single-use confirmation tied to the exact action.
+- **Tamper-evident audit trail:** broker decisions are recorded as a SHA-256 hash chain without storing raw file contents.
+- **Assistant gate:** the assistant integration remains disabled until isolation and security requirements are met.
+
+This is a desktop distribution prototype, not yet a finished general-purpose operating system. XFCE remains available as the recovery/fallback session while Aurora is developed and tested.
+
+## Aurora desktop
+
+Aurora is the original visual and interaction layer currently running over XFCE.
+
+| Component | Current implementation |
+|---|---|
+| Top panel | Launcher, workspaces, clock, active-window information, status indicators and session controls |
+| Floating dock | Pinned applications, application icons, optional running-window buttons and Trash shortcut |
+| Full-screen launcher | Desktop application discovery, search, categories and keyboard navigation |
+| Command Centre | Local system-status cards and shortcuts to common desktop settings |
+| Control Centre | Overview, Appearance, Security, System and About pages; accent palettes, wallpaper selection, dock size/position/opacity and reduce-motion setting |
+| Identity | Glass-X logo, Royal Aurora wallpapers and a consistent CSS design system |
+
+The shell is still a preview layered over XFCE. Appearance controls and headless shell paths have automated coverage, but full interactive GTK behavior is not yet signed off.
+
+See [`docs/XOR_SHELL.md`](docs/XOR_SHELL.md) for the design and keyboard behavior.
+
+## Permission broker
+
+The broker is the security-focused core of XOR OS. Cooperating tools submit typed requests; the broker evaluates grants, obtains user approval for supported writes, performs constrained filesystem operations and records the outcome.
 
 ```mermaid
 flowchart LR
-    T["Cooperating tool\nor future assistant"] -->|typed request| P{"Default-deny\npolicy"}
-    P -->|no exact grant| D["Denied + audited"]
-    P -->|read/list grant| E["FD-anchored executor"]
-    P -->|write grant| C{"User confirms\nthis exact action?"}
-    C -->|deny / Esc / timeout| D
-    C -->|"Approve Once"| E
-    E --> F["Granted file only"]
-    E --> A["Hash-chained audit log\ndigests, never contents"]
+    T["Cooperating tool"] --> R["Typed request"]
+    R --> P{"Default-deny policy"}
+    P -->|No exact grant| D["Denied"]
+    P -->|Read/list grant| E["Constrained executor"]
+    P -->|Write grant| C{"Approve this exact action?"}
+    C -->|Deny, Esc or timeout| D
+    C -->|Approve once| E
+    E --> F["Granted resource"]
+    P --> A["Hash-chained audit"]
     D --> A
+    E --> A
 ```
 
-### Security properties implemented and tested
+### Implemented and tested properties
 
-* **Default-deny** capability manifests, strictly validated.
-* Exact **file** grants; directory grants only when explicitly created.
-* `O_NOFOLLOW` + `dir_fd` traversal defeats path traversal, symlink
-  escapes and validation/execution races.
-* Writes require a **single-use, digest-bound, 120-second** approval.
-* Delete, network-send and process-exec exist in the API only to be
-  **denied and audited**; manifests cannot grant them.
-* Every request attempts one SHA-256 hash-chained audit record with
-  metadata/digests — never raw file content; an append failure is
-  reported explicitly.
-* Hostile document text is never consulted by policy.
+- Capability manifests are strictly validated and default to deny.
+- Grants are scoped to explicit file or directory resources; selecting one file does not grant its parent directory.
+- File traversal uses directory file descriptors and no-follow checks to reject path traversal and symlink escapes.
+- Write approvals are digest-bound, single-use and time-limited.
+- Successful uses are counted from the audit log, with cross-process locking for `max_uses`.
+- Audit records are checked for structural and hash-chain integrity; malformed, replaced or truncated log paths fail closed.
+- File writes use private staging and defensive rollback where supported by the operation.
+- Manifest loading rejects symlinks and non-regular files.
+- If audit recording fails after an action, the broker reports an explicit audit failure rather than returning a false success.
 
-### Follow-up hardening
+### Security boundary and remaining limitations
 
-The latest review follow-up strengthened the broker without changing the
-default-deny model:
+The broker mediates requests made **through its API** by cooperating tools. It is not system-wide confinement: a malicious process running as the same user can bypass the API and access files using ordinary operating-system permissions. Stronger process isolation and tool identity are future work.
 
-* Audit-chain verification and `max_uses` counts are rebuilt from the
-  same locked file descriptor. Malformed or hash-invalid records,
-  replaced/deleted log paths and in-process tail truncation fail closed.
-* Selected-directory `list_dir` grants are inode-pinned; the executor
-  checks the opened directory before returning its contents.
-* Pinned write targets are opened without `O_TRUNC`; the opened inode is
-  checked before any change, so replacing or deleting a selected file
-  fails closed and leaves the replacement untouched.
-* Unpinned writes are staged inside a private `0700` directory anchored
-  to the target directory's file descriptor and renamed into place; a
-  failed write leaves the original content intact, and other users cannot
-  read or substitute the staged bytes. Pinned writes update the pinned
-  inode in place with a backup/rollback copy, and zero-progress `write()`
-  results fail explicitly instead of looping.
-* Manifest loading shares `xor-broker init`'s no-follow and
-  regular-file policy.
-* If the audit append fails after an action, the broker returns an
-  explicit `audit_failure` and no result data instead of a false success.
+Execution and audit append are not crash-atomic. A system crash can leave an action unrecorded, and a crash during an in-place pinned-file write can leave partial content. A local hash chain is tamper-evident, not tamper-proof against an attacker who controls the log and verifier. These are known limits, not guarantees of the current prototype.
 
-See [`broker/README.md`](broker/README.md),
-[`docs/THREAT_MODEL.md`](docs/THREAT_MODEL.md) and
-[`docs/TEST_RESULTS.md`](docs/TEST_RESULTS.md) for the exact guarantees,
-remaining limits and test evidence.
+Read [`broker/README.md`](broker/README.md), [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) and [`docs/THREAT_MODEL.md`](docs/THREAT_MODEL.md) for the detailed design and threat model.
 
-**Limits unchanged:** execution and audit append are not crash-atomic;
-pinned-write rollback protects against reported errors, not a crash in the
-middle of an in-place update. An append failure is reported but cannot undo
-an action. The broker is not system-wide confinement. The 2026-10-27 cloud
-run (40597398794) passed the ISO build and the QEMU live-session gate with a
-visible Aurora desktop; the QEMU check boots the extracted kernel/initrd
-directly, so firmware/bootloader selection and full interactive GTK QA
-remain unverified.
+## Try the broker
 
-The boundary mediates requests **through the broker API**. It is not
-yet system-wide syscall confinement. The complete honest model is in
-[`docs/THREAT_MODEL.md`](docs/THREAT_MODEL.md).
-
-## 🚀 Try the broker in 60 seconds
-
-No ISO, root, display or downloads required — only Python 3.9+:
+The broker demo and test suite do not require a graphical session or an ISO. Use Python 3.9 or later.
 
 ```sh
 git clone https://github.com/Rishidev-20thcenturey/XOR-OPERATING-SYSTEM-.git
 cd XOR-OPERATING-SYSTEM-
 
 PYTHONPATH=broker/src python3 -m xor_broker.cli demo
-# Type the word: approve
+# Follow the prompt to approve the demonstration write.
 ```
 
-You will see a granted read succeed; a sibling secret and `../`
-traversal denied; a write pause for approval; a network send refused;
-and the tamper-evident audit trail tying it together.
+Run the checks:
 
 ```sh
-tools/test.sh       # 96 tests + 200-scenario security corpus
-tools/validate.sh   # code, assets, docs inputs and live-build wiring
+tools/test.sh
+tools/validate.sh
 ```
 
-## 💎 Try Aurora
+The test script covers the broker, assistant gate, desktop logic, build-script regression checks and the security corpus. The CI run listed above passed on Python 3.11 and 3.12.
 
-On a graphical Linux machine with GTK 3 / PyGObject:
+## Try Aurora
+
+On a graphical Linux machine with GTK 3 and PyGObject installed:
 
 ```sh
 PYTHONPATH=desktop:broker/src python3 -m xor_shell
 
-# Individual surfaces
+# Open individual interfaces
 PYTHONPATH=desktop:broker/src python3 -m xor_shell --launcher
 PYTHONPATH=desktop:broker/src python3 -m xor_shell.control_center
 ```
 
-Headless proof points used by tests and CI:
+Headless commands used by validation and CI:
 
 ```sh
 PYTHONPATH=desktop:broker/src python3 -m xor_shell --status-json
@@ -188,13 +153,9 @@ PYTHONPATH=desktop:broker/src python3 -m xor_shell --list-apps
 PYTHONPATH=desktop:broker/src python3 -m xor_shell.control_center --text
 ```
 
-## 💿 Build and boot the OS image
+## Build the live ISO
 
-The dedicated GitHub Actions workflow
-[`.github/workflows/iso-build.yml`](.github/workflows/iso-build.yml) runs
-this build on `ubuntu-latest` for the ISO-hardening review branch and
-uploads the build/QEMU evidence. On a Debian/Ubuntu development machine
-with Debian mirror access:
+On a Debian/Ubuntu development machine with Debian mirror access:
 
 ```sh
 sudo apt install live-build qemu-system-x86 ovmf
@@ -202,123 +163,69 @@ sudo tools/build-iso.sh
 tools/run-qemu.sh
 ```
 
-The fixed virtual target is QEMU `q35`, 2 vCPU, 4 GiB RAM,
-virtio-vga, virtio block/network, USB keyboard/tablet and serial
-logging. Live user: `user` (password `live` if prompted).
+The build script validates package names and dependency names before building, propagates `lb build` failures, and rejects stale ISO artifacts. Each build records a checksum and `BUILD-MANIFEST.txt`.
 
-Each build writes the ISO SHA-256 and `BUILD-MANIFEST.txt`. We do
-**not** claim bit-for-bit reproducibility yet. Before `lb build`, the
-script checks every package name and dependency name against the
-configured Debian trixie/updates/security indices. A failed `lb` build
-is never hidden by `tee`, and only an ISO that is new or changed since
-the pre-build snapshot is accepted; old ISOs are preserved but never
-reported as the current artifact. `--clean` explicitly removes prior
-build outputs.
+The slower [ISO build and QEMU workflow](.github/workflows/iso-build.yml) can be run manually from GitHub Actions. Its push trigger is still scoped to the hardening review branch; merging the baseline into `main` did not itself create a new ISO. **A fresh ISO build and boot test from the current `main` revision is a remaining milestone.**
 
-## ✅ Evidence, not promises
+The existing QEMU smoke test uses TCG and boots the extracted kernel/initrd with the ISO attached as a CD-ROM. To validate the full boot path, the next step is to boot the ISO through firmware (UEFI/OVMF and BIOS) and verify the live session, then exercise Aurora and broker dialogs interactively.
 
-Earlier local results (2026-10-27, Termux/Android, Python 3.13.13):
+## Roadmap
 
-* **Latest PR CI (2026-10-28): 96 tests passed** on Python 3.11 and 3.12:
-  81 broker tests and 15 assistant/desktop tests. The dangling audit-log
-  symlink regression is included. [CI run 40640029964](https://github.com/Rishidev-20thcenturey/XOR-OPERATING-SYSTEM-/actions/runs/40640029964).
-* **Earlier local baseline: 95 unit tests passed** under unittest: 80 broker (including
-  corpus-as-test), 3 assistant-gate and 12 desktop/Activity/Aurora.
-  Write regressions prove a replaced pinned file keeps its contents,
-  deleted pinned targets are not recreated, failed/zero-progress writes
-  preserve the original (atomic staging for unpinned writes, rollback for
-  pinned writes), staging is private `0700` (file created `0600`) and
-  source-name substitution cannot redirect the rename, staging cleanup is
-  identity-checked (and may leave an empty directory in unsafe shared
-  parents), and symlink targets fail closed.
-* **200 security scenarios + 50 injection twins passed**:
-  0 out-of-grant actions executed, 0 network sends, 0 unconfirmed
-  writes, 0 audit/content leaks, 45/45 legitimate approved actions.
-* **Build-script regressions passed** with a fake `lb`: failed builds
-  return failure through `tee`, failed package validation blocks the
-  build, a stale ISO is never selected, and old artifacts are preserved.
-* **Package list preflight passed** against the live trixie/updates/
-  security indices: 40 requested packages, 69,222 package names, and
-  dependency names resolve. A negative control with `Thunar-volman`
-  failed with a lowercase-name suggestion.
-* Static validation passes across 36 Python files, CSS/logo/wallpapers,
-  desktop entries, shell scripts and live-build wiring. ShellCheck
-  0.11.0 and pyflakes are clean.
-* **ISO build and QEMU live-session gate passed** in GitHub Actions run
-  [40597398794](https://github.com/Rishidev-20thcenturey/XOR-OPERATING-SYSTEM-/actions/runs/40597398794)
-  at commit `26e87fdddc8016ece8cadb0d24d1d971d1ba9eb3`. The ISO is
-  1,464,860,672 bytes (1.364 GiB), SHA-256
-  `2fb52d345a9209fae87a32965f32d64e5fcb75ce2ad207dd895d79034ed80603`.
-  QEMU recorded `Started lightdm.service` and produced a 1280×800,
-  793,977-byte screenshot showing the Aurora panel/dock and Royal Aurora
-  wallpaper. The QEMU check extracts the kernel/initrd and attaches the ISO
-  as a CD-ROM, so it does **not** exercise firmware/bootloader selection;
-  interactive GTK QA is still a Milestone-2 checklist item. Detailed rows
-  are in [`docs/TEST_RESULTS.md`](docs/TEST_RESULTS.md).
-
-## 🗺️ Road to the complete XOR OS
-
-| Phase | Status | Destination |
+| Milestone | Status | Next evidence needed |
 |---|---|---|
-| Foundation + broker | ✅ Test-proven | Default-deny, auditable core |
-| ISO proof | ✅ Build + QEMU live-session PASS; firmware/GTK QA pending | Bootloader/firmware path and interactive desktop QA |
-| Aurora Shell | 🧪 Preview implemented | Daily-use panel, dock, launcher, controls |
-| Product system | 📝 Planned | Installer, first-run, grants UI, curated apps |
-| A/B updates | 📝 Designed | Signed, verified, rollback-tested updates |
-| Read-only assistant | 🔒 Disabled | Sandbox-isolated, broker-only access |
-| Hardening/hardware | ⬜ Future | Fuzzing, identity, TPM, broader machines |
+| Broker and security baseline | Implemented; automated tests pass | Continued adversarial review and broader isolation tests |
+| Aurora Shell | Preview implemented | Interactive GTK usability and keyboard testing |
+| Live ISO | Previous build and direct-kernel QEMU session passed | Fresh build from `main`; firmware/bootloader test |
+| Reproducible build | Not claimed | Explain manifest/worktree discrepancy and define repeatable-build checks |
+| Product experience | Planned | Installer, first-run setup, grant management and curated applications |
+| Signed A/B updates | Design only | Signed update verification and rollback tests |
+| Assistant integration | Disabled | Isolated runtime with broker-only resource access |
+| Wider hardware support | Future work | Testing on more machines and hardware configurations |
 
-The complete gate-by-gate plan lives in
-[`docs/PRODUCT_PLAN.md`](docs/PRODUCT_PLAN.md).
+See [`docs/PRODUCT_PLAN.md`](docs/PRODUCT_PLAN.md) for the gate-by-gate project plan.
 
-## 🧭 Repository map
+## Repository structure
 
 ```text
 XOR-OPERATING-SYSTEM-/
-├── broker/          Permission broker, daemon, CLI and unit tests
+├── broker/          Permission broker, daemon, CLI and tests
 ├── desktop/
 │   ├── xor_shell/   Aurora panel, dock, launcher and Control Centre
-│   ├── theme/       Wallpapers, logo and XFCE fallback defaults
-│   ├── applications Menu + session-autostart entries
-│   └── xor_activity Audit Activity viewer
+│   ├── theme/       Wallpapers, logo and XFCE defaults
+│   └── xor_activity Activity/audit viewer
 ├── assistant/       Disabled future-assistant integration gate
-├── security/        200 deterministic adversarial scenarios
-├── os/live-build/   Debian Live Build image configuration
+├── security/        Deterministic adversarial scenarios and corpus runner
+├── os/live-build/   Debian Live Build configuration
 ├── tools/           Build, QEMU, test and validation scripts
-└── docs/            Architecture, threat model, plans, tests and ADRs
+└── docs/            Architecture, threat model, roadmap, tests and ADRs
 ```
 
-## 📚 Documentation
+## Documentation
 
-* [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) — set up and build
-* [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — components and boundaries
-* [`docs/XOR_SHELL.md`](docs/XOR_SHELL.md) — Aurora surfaces and keyboard contract
-* [`docs/PRODUCT_PLAN.md`](docs/PRODUCT_PLAN.md) — path to a complete OS
-* [`docs/TESTING.md`](docs/TESTING.md) — how each claim is verified
-* [`docs/TEST_RESULTS.md`](docs/TEST_RESULTS.md) — actual numbers and NOT RUN items
-* [`docs/THREAT_MODEL.md`](docs/THREAT_MODEL.md) — prevents / detects / does-not-address
-* [`docs/UPDATE_DESIGN.md`](docs/UPDATE_DESIGN.md) — future A/B updater
-* [`docs/adr/`](docs/adr/) — architecture decision records
+- [Development guide](docs/DEVELOPMENT.md) — environment setup and build commands
+- [Architecture](docs/ARCHITECTURE.md) — components and trust boundaries
+- [Aurora Shell](docs/XOR_SHELL.md) — desktop surfaces and keyboard contract
+- [Product plan](docs/PRODUCT_PLAN.md) — milestones for the complete system
+- [Testing guide](docs/TESTING.md) — validation strategy
+- [Test results](docs/TEST_RESULTS.md) — recorded outputs, evidence and open checks
+- [Threat model](docs/THREAT_MODEL.md) — mitigations, residual risks and non-claims
+- [Update design](docs/UPDATE_DESIGN.md) — proposed A/B update architecture
+- [Architecture decision records](docs/adr/) — recorded design decisions
 
-## 🤝 Principles
+## Project principles
 
-* **Reuse the kernel; invent the trust experience.**
-* **Lavish means coherent, accessible and useful—not noise.**
-* **Security before AI.** The assistant remains disabled by design.
-* **No simulated success.** Unsupported capabilities are denied, and
-  unverified work is labelled unverified.
-* **A new contributor should reach green tests in minutes.**
+1. **Reuse proven foundations; build a distinctive trust experience.**
+2. **Security before AI.** The assistant remains disabled until its boundaries are enforced.
+3. **No simulated success.** Unsupported actions are denied, and unverified work is labelled honestly.
+4. **Permission should be explicit and scoped.**
+5. **Prefer evidence over claims.** Tests, checksums and known limitations belong in the project record.
 
-Contributions are welcome — begin with
-[`CONTRIBUTING.md`](CONTRIBUTING.md). Security reports follow
-[`SECURITY.md`](SECURITY.md), not public issues.
+Contributions are welcome. Start with [`CONTRIBUTING.md`](CONTRIBUTING.md). For security-sensitive issues, follow [`SECURITY.md`](SECURITY.md) rather than opening a public issue.
 
-## 📜 Licence
+## License
 
-XOR project code is under the MIT Licence ([`LICENSE`](LICENSE)).
-The assembled OS image contains Debian packages under their own free
-licences.
+Project code is available under the [MIT License](LICENSE). The assembled live image includes Debian packages governed by their respective licenses.
 
 <p align="center">
-  <strong>XOR OS — take back the desktop, one explicit permission at a time.</strong>
+  <strong>XOR OS — a distinctive desktop, with explicit permissions at its core.</strong>
 </p>
