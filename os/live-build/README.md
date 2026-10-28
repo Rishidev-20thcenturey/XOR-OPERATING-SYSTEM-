@@ -26,10 +26,13 @@ artifacts are not deleted; only `--clean` removes prior build outputs.
 | `config/includes.chroot/opt/xor-dist/` | **Staged at build time** by `tools/build-iso.sh` from `broker/`, `desktop/`, `assistant/` (git-ignored; do not edit by hand) |
 | `config/hooks/normal/0900-xor-install.hook.chroot` | Installs XOR broker/shell/control commands, menu entries, broker + Aurora autostart, wallpaper set/logo and XFCE skel defaults; self-checks imports and headless shell status paths |
 
-Status: the ISO build has now run successfully in GitHub Actions run
-40542700041 (commit `d30c7a6045ef00437dbbef4fbad6145f6ad5bb0a`) using
-Debian Live Build `20250505+deb13u1`; the ISO was checksummed and
-artifact-backed. The subsequent bounded QEMU/TCG boot check returned
-`INCONCLUSIVE`, so no boot claim is made here. See
-`docs/TEST_RESULTS.md` for the exact build, artifact and QEMU evidence,
-and `docs/DEVELOPMENT.md` for exact local build steps and troubleshooting.
+Status: the ISO build passed in GitHub Actions run 40597398794 (commit
+`26e87fdddc8016ece8cadb0d24d1d971d1ba9eb3`) using Debian Live Build
+`20250505+deb13u1`; the ISO is 1,464,860,672 bytes with SHA-256
+`2fb52d345a9209fae87a32965f32d64e5fcb75ce2ad207dd895d79034ed80603` and
+is artifact-backed. The bounded QEMU/TCG check reached a live XFCE session
+and captured a screenshot showing the Aurora panel/dock and Royal Aurora
+wallpaper. The check extracts the kernel/initrd and attaches the ISO as a
+CD-ROM, so firmware/bootloader selection is not exercised. See
+`docs/TEST_RESULTS.md` for exact build, artifact and QEMU evidence, and
+`docs/DEVELOPMENT.md` for local build steps and troubleshooting.
