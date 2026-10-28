@@ -64,7 +64,10 @@ class GtkConfirmation:
         approve_btn.get_style_context().add_class("destructive-action")
         deny_btn.grab_focus()  # safe default for keyboard users
 
+        timer_state = {"expired": False}
+
         def on_timeout():
+            timer_state["expired"] = True
             dialog.response(Gtk.ResponseType.REJECT)
             return False
 
@@ -76,11 +79,18 @@ class GtkConfirmation:
             return False
 
         dialog.connect("key-press-event", on_key)
-        GLib.timeout_add_seconds(CONFIRMATION_TTL_SECONDS, on_timeout)
+        timeout_id = GLib.timeout_add_seconds(CONFIRMATION_TTL_SECONDS, on_timeout)
         dialog.show_all()
-        response = dialog.run()
-        result["approved"] = (response == Gtk.ResponseType.ACCEPT)
-        dialog.destroy()
-        while Gtk.events_pending():
-            Gtk.main_iteration()
+        try:
+            response = dialog.run()
+            result["approved"] = (response == Gtk.ResponseType.ACCEPT)
+        finally:
+            # A user may answer long before the 120-second timeout.  Remove
+            # that pending GLib source so it cannot retain/fire on a destroyed
+            # dialog later.  The callback marks itself expired before return.
+            if not timer_state["expired"]:
+                GLib.source_remove(timeout_id)
+            dialog.destroy()
+            while Gtk.events_pending():
+                Gtk.main_iteration()
         return result["approved"]
