@@ -91,8 +91,13 @@ if ! xorriso -osirrox on -indev "$ISO" -extract /install "$OUT/install" \
     echo "could not extract /install from ISO" >&2
     finish
 fi
-KERNEL=$(find -L "$OUT/install" -maxdepth 2 -type f -name 'vmlinuz*' | head -n1)
-INITRD=$(find -L "$OUT/install" -maxdepth 2 -type f -name 'initrd*' | head -n1)
+# Prefer the text installer: it runs without a VGA device, unlike gtk/.
+KERNEL="$OUT/install/vmlinuz"
+INITRD="$OUT/install/initrd.gz"
+if [ ! -f "$KERNEL" ] || [ ! -f "$INITRD" ]; then
+    KERNEL=$(find -L "$OUT/install" -maxdepth 2 -type f -name 'vmlinuz*' | head -n1)
+    INITRD=$(find -L "$OUT/install" -maxdepth 2 -type f -name 'initrd*' | head -n1)
+fi
 [ -n "$KERNEL" ] && [ -n "$INITRD" ] || {
     INSTALL_RESULT=FAIL
     echo "installer kernel/initrd not found" >&2
@@ -151,6 +156,7 @@ qemu-system-x86_64 \
     -netdev user,id=net0 \
     -device virtio-net-pci,netdev=net0 \
     -display none \
+    -vga none \
     -device virtio-vga \
     -serial "file:$SECOND_SERIAL" \
     -no-reboot \
