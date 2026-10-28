@@ -44,9 +44,13 @@ then put our originality where it matters:
 > directory, a shell or the network.
 
 This repository contains a **tested broker and OS foundation plus the
-Aurora Shell preview**. The ISO is configured and scripted but has not
-yet been boot-verified in the restricted cloud sandbox; that honesty is
-recorded in [`docs/TEST_RESULTS.md`](docs/TEST_RESULTS.md).
+Aurora Shell preview**. The ISO builds successfully in GitHub Actions
+(`.github/workflows/iso-build.yml`), and the bounded QEMU/TCG boot reaches
+the live XFCE session with the Aurora panel/dock and Royal Aurora wallpaper
+visually confirmed in the captured screenshot. The QEMU check boots the
+extracted kernel/initrd directly, so firmware/bootloader selection and full
+interactive GTK QA are still not claimed. The exact evidence and remaining
+limits are recorded in [`docs/TEST_RESULTS.md`](docs/TEST_RESULTS.md).
 
 ## 🌌 Aurora — the XOR desktop
 
@@ -59,7 +63,7 @@ the dependable XFCE/X11 session while it earns replacement status.
 | **Floating dock** | Pinned apps, large luminous icons, live running-window buttons via Wnck, Trash shortcut |
 | **Full-screen launcher** | Real app discovery, weighted search, category pills, generous app cards; Enter opens the best match, Esc closes |
 | **Command Centre** | Honest live network, battery and memory cards with shortcuts to files, sound, displays, screenshot, appearance and security |
-| **Control Centre** | Overview, Appearance, Security, System and About; four accent palettes, wallpaper picker, dock size/opacity, reduce-motion, broker audit summary |
+| **Control Centre** | Overview, Appearance, Security, System and About; four accent palettes, wallpaper picker, dock size/position/opacity, reduce-motion, broker audit summary |
 | **Royal Aurora identity** | Midnight glass wallpapers, scalable glass-X logo, teal/violet/gold CSS design tokens and visible keyboard focus |
 
 XFCE remains available as the recovery/fallback session during the
@@ -96,9 +100,48 @@ flowchart LR
 * Writes require a **single-use, digest-bound, 120-second** approval.
 * Delete, network-send and process-exec exist in the API only to be
   **denied and audited**; manifests cannot grant them.
-* Every request creates one SHA-256 hash-chained audit record with
-  metadata/digests — never raw file content.
+* Every request attempts one SHA-256 hash-chained audit record with
+  metadata/digests — never raw file content; an append failure is
+  reported explicitly.
 * Hostile document text is never consulted by policy.
+
+### Follow-up hardening
+
+The latest review follow-up strengthened the broker without changing the
+default-deny model:
+
+* Audit-chain verification and `max_uses` counts are rebuilt from the
+  same locked file descriptor. Malformed or hash-invalid records,
+  replaced/deleted log paths and in-process tail truncation fail closed.
+* Selected-directory `list_dir` grants are inode-pinned; the executor
+  checks the opened directory before returning its contents.
+* Pinned write targets are opened without `O_TRUNC`; the opened inode is
+  checked before any change, so replacing or deleting a selected file
+  fails closed and leaves the replacement untouched.
+* Unpinned writes are staged inside a private `0700` directory anchored
+  to the target directory's file descriptor and renamed into place; a
+  failed write leaves the original content intact, and other users cannot
+  read or substitute the staged bytes. Pinned writes update the pinned
+  inode in place with a backup/rollback copy, and zero-progress `write()`
+  results fail explicitly instead of looping.
+* Manifest loading shares `xor-broker init`'s no-follow and
+  regular-file policy.
+* If the audit append fails after an action, the broker returns an
+  explicit `audit_failure` and no result data instead of a false success.
+
+See [`broker/README.md`](broker/README.md),
+[`docs/THREAT_MODEL.md`](docs/THREAT_MODEL.md) and
+[`docs/TEST_RESULTS.md`](docs/TEST_RESULTS.md) for the exact guarantees,
+remaining limits and test evidence.
+
+**Limits unchanged:** execution and audit append are not crash-atomic;
+pinned-write rollback protects against reported errors, not a crash in the
+middle of an in-place update. An append failure is reported but cannot undo
+an action. The broker is not system-wide confinement. The 2026-10-27 cloud
+run (40597398794) passed the ISO build and the QEMU live-session gate with a
+visible Aurora desktop; the QEMU check boots the extracted kernel/initrd
+directly, so firmware/bootloader selection and full interactive GTK QA
+remain unverified.
 
 The boundary mediates requests **through the broker API**. It is not
 yet system-wide syscall confinement. The complete honest model is in
@@ -121,7 +164,7 @@ traversal denied; a write pause for approval; a network send refused;
 and the tamper-evident audit trail tying it together.
 
 ```sh
-tools/test.sh       # 41 tests + 200-scenario security corpus
+tools/test.sh       # 96 tests + 200-scenario security corpus
 tools/validate.sh   # code, assets, docs inputs and live-build wiring
 ```
 
@@ -147,7 +190,11 @@ PYTHONPATH=desktop:broker/src python3 -m xor_shell.control_center --text
 
 ## 💿 Build and boot the OS image
 
-On a Debian/Ubuntu development machine with Debian mirror access:
+The dedicated GitHub Actions workflow
+[`.github/workflows/iso-build.yml`](.github/workflows/iso-build.yml) runs
+this build on `ubuntu-latest` for the ISO-hardening review branch and
+uploads the build/QEMU evidence. On a Debian/Ubuntu development machine
+with Debian mirror access:
 
 ```sh
 sudo apt install live-build qemu-system-x86 ovmf
@@ -156,33 +203,65 @@ tools/run-qemu.sh
 ```
 
 The fixed virtual target is QEMU `q35`, 2 vCPU, 4 GiB RAM,
-virtio-VGA, virtio block/network, USB keyboard/tablet and serial
+virtio-vga, virtio block/network, USB keyboard/tablet and serial
 logging. Live user: `user` (password `live` if prompted).
 
 Each build writes the ISO SHA-256 and `BUILD-MANIFEST.txt`. We do
-**not** claim bit-for-bit reproducibility yet.
+**not** claim bit-for-bit reproducibility yet. Before `lb build`, the
+script checks every package name and dependency name against the
+configured Debian trixie/updates/security indices. A failed `lb` build
+is never hidden by `tee`, and only an ISO that is new or changed since
+the pre-build snapshot is accepted; old ISOs are preserved but never
+reported as the current artifact. `--clean` explicitly removes prior
+build outputs.
 
 ## ✅ Evidence, not promises
 
-Latest sandbox results:
+Earlier local results (2026-10-27, Termux/Android, Python 3.13.13):
 
-* **41 unit tests passed** under pytest (broker, assistant gate,
-  Activity and Aurora cores).
+* **Latest PR CI (2026-10-28): 96 tests passed** on Python 3.11 and 3.12:
+  81 broker tests and 15 assistant/desktop tests. The dangling audit-log
+  symlink regression is included. [CI run 40640029964](https://github.com/Rishidev-20thcenturey/XOR-OPERATING-SYSTEM-/actions/runs/40640029964).
+* **Earlier local baseline: 95 unit tests passed** under unittest: 80 broker (including
+  corpus-as-test), 3 assistant-gate and 12 desktop/Activity/Aurora.
+  Write regressions prove a replaced pinned file keeps its contents,
+  deleted pinned targets are not recreated, failed/zero-progress writes
+  preserve the original (atomic staging for unpinned writes, rollback for
+  pinned writes), staging is private `0700` (file created `0600`) and
+  source-name substitution cannot redirect the rename, staging cleanup is
+  identity-checked (and may leave an empty directory in unsafe shared
+  parents), and symlink targets fail closed.
 * **200 security scenarios + 50 injection twins passed**:
   0 out-of-grant actions executed, 0 network sends, 0 unconfirmed
   writes, 0 audit/content leaks, 45/45 legitimate approved actions.
-* Static validation passes across 34 Python files, CSS/logo/wallpapers,
-  desktop entries, shell scripts and live-build wiring; pyflakes clean.
-* **NOT RUN:** ISO build, QEMU boot and GTK behaviour in the sandbox
-  (`lb`/QEMU/KVM/display unavailable). Commands and exact blockers are
-  in [`docs/TEST_RESULTS.md`](docs/TEST_RESULTS.md).
+* **Build-script regressions passed** with a fake `lb`: failed builds
+  return failure through `tee`, failed package validation blocks the
+  build, a stale ISO is never selected, and old artifacts are preserved.
+* **Package list preflight passed** against the live trixie/updates/
+  security indices: 40 requested packages, 69,222 package names, and
+  dependency names resolve. A negative control with `Thunar-volman`
+  failed with a lowercase-name suggestion.
+* Static validation passes across 36 Python files, CSS/logo/wallpapers,
+  desktop entries, shell scripts and live-build wiring. ShellCheck
+  0.11.0 and pyflakes are clean.
+* **ISO build and QEMU live-session gate passed** in GitHub Actions run
+  [40597398794](https://github.com/Rishidev-20thcenturey/XOR-OPERATING-SYSTEM-/actions/runs/40597398794)
+  at commit `26e87fdddc8016ece8cadb0d24d1d971d1ba9eb3`. The ISO is
+  1,464,860,672 bytes (1.364 GiB), SHA-256
+  `2fb52d345a9209fae87a32965f32d64e5fcb75ce2ad207dd895d79034ed80603`.
+  QEMU recorded `Started lightdm.service` and produced a 1280×800,
+  793,977-byte screenshot showing the Aurora panel/dock and Royal Aurora
+  wallpaper. The QEMU check extracts the kernel/initrd and attaches the ISO
+  as a CD-ROM, so it does **not** exercise firmware/bootloader selection;
+  interactive GTK QA is still a Milestone-2 checklist item. Detailed rows
+  are in [`docs/TEST_RESULTS.md`](docs/TEST_RESULTS.md).
 
 ## 🗺️ Road to the complete XOR OS
 
 | Phase | Status | Destination |
 |---|---|---|
 | Foundation + broker | ✅ Test-proven | Default-deny, auditable core |
-| ISO proof | 🔜 Next gate | Build and boot evidence in QEMU |
+| ISO proof | ✅ Build + QEMU live-session PASS; firmware/GTK QA pending | Bootloader/firmware path and interactive desktop QA |
 | Aurora Shell | 🧪 Preview implemented | Daily-use panel, dock, launcher, controls |
 | Product system | 📝 Planned | Installer, first-run, grants UI, curated apps |
 | A/B updates | 📝 Designed | Signed, verified, rollback-tested updates |

@@ -3,7 +3,7 @@
 #
 # Virtual machine definition (x86-64):
 #   machine q35 · 2 vCPU · 4 GiB RAM · KVM if available else TCG
-#   display: virtio-VGA            storage: CD-ROM (IDE) + virtio-blk qcow2 disk
+#   display: virtio-vga            storage: CD-ROM (IDE) + virtio-blk qcow2 disk
 #   network: virtio-net (user NAT) input:   USB keyboard + USB tablet (xHCI)
 #   debug:   serial console -> xor-serial.log, QEMU monitor on Ctrl+Alt+2
 # Firmware: UEFI (OVMF) if found, else SeaBIOS (ISO is hybrid; both boot).
@@ -34,7 +34,7 @@ done
 command -v qemu-system-x86_64 >/dev/null 2>&1 || {
     echo "ERROR: qemu-system-x86_64 not found." >&2
     echo "  Install on Debian/Ubuntu: sudo apt install qemu-system-x86 ovmf" >&2
-    echo "  (No /dev/KVM? The VM still runs, just slower under TCG emulation.)" >&2
+    echo "  (No /dev/kvm? The VM still runs, just slower under TCG emulation.)" >&2
     exit 1
 }
 
@@ -55,10 +55,10 @@ if [ ! -f "$DISK" ]; then
 fi
 
 ACCEL="tcg"; CPU="qemu64"
-if [ -w /dev/KVM ]; then
-    ACCEL="KVM"; CPU="host"
+if [ -w /dev/kvm ]; then
+    ACCEL="kvm"; CPU="host"
 else
-    echo "NOTE: /dev/KVM unavailable - using TCG emulation (slower boot)."
+    echo "NOTE: /dev/kvm unavailable - using TCG emulation (slower boot)."
 fi
 
 FIRMWARE_ARGS=""
@@ -94,11 +94,11 @@ exec qemu-system-x86_64 \
     -drive file="$ISO",media=cdrom,if=ide,index=2,readonly=on \
     -drive file="$DISK",if=none,id=disk0,format=qcow2 \
     -device virtio-blk-pci,drive=disk0 \
-    -device virtio-VGA \
+    -device virtio-vga \
     -device virtio-net-pci,netdev=net0 \
     -netdev user,id=net0 \
     -device qemu-xhci,id=usb0 \
-    -device usb-KVM,bus=usb0.0 \
+    -device usb-kbd,bus=usb0.0 \
     -device usb-tablet,bus=usb0.0 \
     $SERIAL_ARGS \
     $DISPLAY_ARGS \

@@ -14,6 +14,7 @@ Run: tools/validate.sh  (or python3 tools/validate.py)
 import json
 import os
 import py_compile
+import re
 import shutil
 import struct
 import subprocess
@@ -128,9 +129,23 @@ def t_livebuild_tree():
     config = open(os.path.join(base, "auto/config")).read()
     for needle in ("trixie", "amd64", "iso-hybrid"):
         assert needle in config, f"auto/config lacks {needle}"
+    # live-build only applies its mirror defaults when --mode is lowercase
+    # "debian".  The old "Debian" spelling produced an empty mirror URI and
+    # an unreadable /etc/apt/sources.list inside the chroot.
+    assert "--mode debian" in config, "auto/config must use lowercase debian mode"
+    assert "http://deb.debian.org/debian" in config, "auto/config lacks the Debian mirror"
+    assert "http://security.debian.org/debian-security" in config, \
+        "auto/config lacks the Debian security mirror"
     packages = open(os.path.join(base, "config/package-lists/xor.list.chroot")).read()
-    for needle in ("gir1.2-wnck-3.0", "pavucontrol", "procps"):
-        assert needle in packages, f"package list lacks {needle}"
+    package_lines = {
+        line.strip() for line in packages.splitlines()
+        if line.strip() and not line.strip().startswith("#")
+    }
+    for needle in ("gir1.2-wnck-3.0", "pavucontrol", "procps",
+                   "thunar-volman", "fonts-inter", "fonts-dejavu", "polkitd"):
+        assert needle in package_lines, f"package list lacks {needle}"
+    for legacy in ("Thunar-volman", "fonts-Inter", "fonts-DejaVu", "policykit-1"):
+        assert legacy not in package_lines, f"package list retains invalid name {legacy}"
     hook = open(os.path.join(
         base, "config/hooks/normal/0900-xor-install.hook.chroot")).read()
     for needle in ("desktop/xor_shell", "/usr/local/bin/xor-shell",
@@ -138,12 +153,37 @@ def t_livebuild_tree():
                    "desktop/theme/wallpapers/", "xor-logo.svg",
                    "xor_shell --status-json", "xor_shell.control_center --text"):
         assert needle in hook, f"install hook lacks {needle}"
-    return "config, hook, package list + Aurora install wiring present"
+    # Demo tools are exposed through PYTHONPATH wrappers.  Do not mutate
+    # their shebang/docstring with sed; both variants have broken before.
+    for needle in ("/usr/local/bin/xor-demo-reader",
+                   "/usr/local/bin/xor-demo-writer",
+                   "/usr/local/lib/xor-broker/examples/demo_reader.py",
+                   "PYTHONPATH=/usr/local/lib/xor-broker python3 "
+                   "/usr/local/lib/xor-broker/examples/demo_reader.py"):
+        assert needle in hook, f"install hook lacks {needle}"
+    assert "sed -i '1i import sys" not in hook, "demo-tool import is before the shebang"
+    assert "sed -i '1a import sys" not in hook, "demo-tool import displaces the docstring"
+    return "config, mirrors, hook, package list + Aurora install wiring present"
+
+
+def t_qemu_target():
+    path = os.path.join(REPO, "tools/run-qemu.sh")
+    text = open(path, encoding="utf-8").read()
+    # QEMU device names and Linux device nodes are case-sensitive.  These
+    # typos are invisible to ShellCheck and would break the first boot.
+    assert "/dev/kvm" in text, "run-qemu.sh does not check /dev/kvm"
+    assert 'ACCEL="kvm"' in text, "run-qemu.sh does not select the kvm accelerator"
+    assert "virtio-vga" in text, "run-qemu.sh lacks virtio-vga"
+    assert "usb-kbd" in text, "run-qemu.sh lacks a USB keyboard device"
+    for bad in ("/dev/KVM", 'ACCEL="KVM"', "virtio-VGA", "usb-KVM"):
+        assert bad not in text, f"run-qemu.sh contains invalid identifier {bad!r}"
+    return "KVM, virtio-vga and usb-kbd identifiers are correct"
 
 
 def t_shell():
     scripts = [
         "tools/build-iso.sh", "tools/run-qemu.sh", "tools/test.sh",
+        "tools/test-build-iso.sh",
         "os/live-build/auto/config", "os/live-build/auto/build",
         "os/live-build/auto/clean",
         "os/live-build/config/hooks/normal/0900-xor-install.hook.chroot",
@@ -185,6 +225,15 @@ def t_aurora_assets():
                    ".app-card", ".control-window", "@xor_primary",
                    "@xor_secondary", "button:focus"):
         assert needle in css, f"style.css lacks {needle}"
+
+    # GTK 3 CSS only accepts numeric font-weight values in hundreds.  A
+    # non-hundred value raises a GLib.CssProvider error at runtime and stops
+    # the entire shell before its first window is created.
+    for match in re.finditer(r"font-weight\s*:\s*(\d+)", css):
+        weight = int(match.group(1))
+        line = css.count("\n", 0, match.start()) + 1
+        assert 100 <= weight <= 900 and weight % 100 == 0, (
+            f"style.css line {line}: GTK-invalid font-weight {weight}")
 
     logo = os.path.join(REPO, "desktop/theme/xor-logo.svg")
     root = ET.parse(logo).getroot()
@@ -235,6 +284,7 @@ def main():
     check("XFCE theme XML well-formed", t_xml)
     check(".desktop entries", t_desktop_files)
     check("live-build tree complete", t_livebuild_tree)
+    check("QEMU target identifiers", t_qemu_target)
     check("shell scripts", t_shell)
     check("wallpaper PNG", t_wallpaper)
     check("Aurora shell assets", t_aurora_assets)

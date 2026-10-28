@@ -51,11 +51,19 @@ Shell settings live in `~/.config/xor/shell.json`; see
 
 ```sh
 sudo tools/build-iso.sh        # output: os/live-build/*.iso (+ .sha256, BUILD-MANIFEST.txt)
-tools/run-qemu.sh              # fixed target: q35, 2 vCPU, 4 GiB, virtio-VGA/blk/net,
-                               # USB KVM+tablet, serial -> xor-serial.log
+tools/run-qemu.sh              # fixed target: q35, 2 vCPU, 4 GiB, virtio-vga/blk/net,
+                               # USB keyboard+tablet, serial -> xor-serial.log
 tools/run-qemu.sh --headless   # serial console in your terminal (add console=ttyS0 at boot menu)
 tools/run-qemu.sh --fresh      # recreate the 16G qcow2 first (xor-QEMU-disk.qcow2)
 ```
+
+`build-iso.sh` checks the package list against the configured Debian
+trixie/updates/security indices before starting `lb build`. Run the same
+network check on its own with `python3 tools/check-packages.py`. A failed
+`lb build` is not hidden by the `tee` pipeline, and the script only accepts
+an ISO that is new or changed since the pre-build snapshot; old ISOs are
+preserved but never reported as the new artifact. `--clean` is the
+explicit way to remove prior build outputs.
 
 Live user `user`, password `live` if prompted (autologin on). In the
 session: **XOR Broker Demo**, **XOR Activity**, **XOR Shell** and
@@ -66,6 +74,22 @@ experience layer while XFCE remains the fallback.
 Debugging a failed boot: `--headless`, edit the boot line to add
 `console=ttyS0`, read `xor-serial.log`; or QEMU monitor with
 Ctrl+Alt+2. KVM missing ⇒ TCG emulation (works, slow).
+
+### CI ISO build and bounded QEMU smoke test
+
+The dedicated workflow `.github/workflows/iso-build.yml` builds on
+`ubuntu-latest` inside a disposable `debian:trixie` container and runs a
+bounded QEMU/TCG direct-kernel boot check. It uploads build evidence, the
+ISO, QEMU logs and a screenshot attempt, then fails unless the build
+succeeded and QEMU returned `PASS`.
+
+The accepted cloud run (2026-10-27, workflow run 40597398794, commit
+`26e87fdddc8016ece8cadb0d24d1d971d1ba9eb3`) built and checksum-verified
+the ISO and passed the QEMU/TCG live-session gate. The captured 1280×800
+screenshot shows the Aurora panel/dock and Royal Aurora wallpaper. The job
+boots the extracted kernel/initrd directly, so firmware/bootloader
+selection and interactive GTK QA remain follow-up work; see
+`docs/TEST_RESULTS.md` for the exact evidence and caveats.
 
 ## Where new work belongs
 

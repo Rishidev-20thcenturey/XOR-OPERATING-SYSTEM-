@@ -13,7 +13,7 @@ manages windows and XFCE remains the fallback if the shell is closed.
 | Floating dock | Pinned applications, live running-window buttons through optional Wnck, Files Trash shortcut |
 | Full-screen launcher | Discovers real `.desktop` apps; weighted search, category pills, app cards, Enter launches first match, Esc closes |
 | Command Centre | Live local network/battery/memory cards plus Files, network, sound, display, screenshot, appearance, security and settings actions |
-| Control Centre | Overview, Appearance, Security, System and About pages; accents, wallpaper selection, dock size/opacity, broker audit summary |
+| Control Centre | Overview, Appearance, Security, System and About pages; accents, wallpaper selection, dock position/size, panel opacity, reduce-motion, broker audit summary |
 
 ## Run from the repository
 
@@ -44,8 +44,16 @@ Aurora saves validated settings to `~/.config/xor/shell.json`:
 * reduce-motion and clock-seconds preferences
 * up to 14 pinned `.desktop` application IDs
 
-Installed wallpapers live in `/usr/share/xor/wallpapers/`; repository
-development reads `desktop/theme/wallpapers/` as a fallback.
+These settings are consumed, not just saved: dock position/size and
+panel opacity are applied on the next XOR Shell start, and reduce-motion
+disables Control Centre page transitions and GTK animations. Installed
+wallpapers live in `/usr/share/xor/wallpapers/`; repository development
+reads `desktop/theme/wallpapers/` as a fallback. On a live XFCE 4.20
+session the shell also owns the backdrop after first-login migration: it
+discovers the connected `xrandr` connector (for example
+`monitorVirtual-1`), writes the single-image and workspace keys, and asks
+xfdesktop to reload. This is why a fresh live session shows Royal Aurora
+instead of Debian’s default wallpaper.
 
 ## Keyboard contract
 
@@ -75,9 +83,12 @@ but live running-window/workspace integration is unavailable.
 ## Honest limits
 
 * This is an experience layer, not yet a window-manager replacement.
-* GTK surfaces were compile- and logic-tested in the headless sandbox;
-  they still require daily-use verification on a booted ISO.
+* The final ISO screenshot confirms that the panel, dock and Royal Aurora
+  backdrop render on a live XFCE session. Interactive launcher, Wnck,
+  Control Centre and broker-dialog behaviour still needs daily-use
+  verification on a booted machine; the headless sandbox cannot exercise
+  those clicks/focus paths.
 * Translucent GTK/CSS surfaces provide the glass look through XFWM’s
   compositor; this is not claimed to be a true background-blur compositor.
-* XFCE panel is retained as fallback during the preview, so first boot
-  may show both shells until Phase 2’s replacement gate passes.
+* XFCE panel is retained as fallback during the preview, so first boot may
+  show both shells until Phase 2’s replacement gate passes.

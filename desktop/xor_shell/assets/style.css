@@ -88,7 +88,7 @@ window.shell-window {
 
 .clock-label {
   font-size: 15px;
-  font-weight: 750;
+  font-weight: 700;
   letter-spacing: 0.02em;
 }
 
@@ -117,7 +117,7 @@ window.shell-window {
 
 .hero-title {
   font-size: 34px;
-  font-weight: 850;
+  font-weight: 800;
   letter-spacing: -0.035em;
 }
 
@@ -166,7 +166,7 @@ window.shell-window {
 }
 
 .app-card-title {
-  font-weight: 720;
+  font-weight: 700;
 }
 
 .app-card-comment {
@@ -204,7 +204,7 @@ window.shell-window {
   background: rgba(255, 255, 255, 0.11);
   border-color: rgba(255, 255, 255, 0.18);
   color: white;
-  font-weight: 750;
+  font-weight: 700;
 }
 
 .primary-button {
@@ -212,7 +212,7 @@ window.shell-window {
   border: 1px solid rgba(255, 255, 255, 0.28);
   border-radius: 16px;
   color: white;
-  font-weight: 760;
+  font-weight: 700;
   padding: 10px 16px;
 }
 

@@ -1,8 +1,8 @@
 #!/bin/sh
 # Run the full XOR baseline test suite:
-#   1. broker unit tests (pytest if available, else unittest)
-#   2. 200-scenario broker security corpus + acceptance criteria
-#   3. assistant-disabled and activity-viewer tests
+#   1. broker, assistant-gate and desktop unit tests
+#   2. build-iso failure/artifact-freshness regression test (fake lb)
+#   3. 200-scenario broker security corpus + acceptance criteria
 # Exits non-zero at the FIRST failing stage. No root or display needed.
 set -eu
 
@@ -19,10 +19,13 @@ if $PY -c "import pytest" 2>/dev/null; then
 else
     echo "NOTE: pytest not installed; using unittest (pip install pytest for nicer output)"
     step "Unit tests (unittest)"
-    PYTHONPATH=broker/src $PY -m unittest discover -s broker/tests -v 2>&1 | tail -5
-    PYTHONPATH=broker/src:assistant/src $PY -m unittest discover -s assistant/tests -v 2>&1 | tail -5
-    PYTHONPATH=broker/src:desktop $PY -m unittest discover -s desktop/tests -v 2>&1 | tail -5
+    PYTHONPATH=broker/src $PY -m unittest discover -s broker/tests -v
+    PYTHONPATH=broker/src:assistant/src $PY -m unittest discover -s assistant/tests -v
+    PYTHONPATH=broker/src:desktop $PY -m unittest discover -s desktop/tests -v
 fi
+
+step "Build script failure and artifact freshness (fake lb)"
+sh tools/test-build-iso.sh
 
 step "Security corpus (200 scenarios + 50 injection twins)"
 $PY security/run_corpus.py

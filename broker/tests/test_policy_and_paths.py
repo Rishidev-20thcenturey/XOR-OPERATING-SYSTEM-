@@ -7,6 +7,7 @@ from datetime import timedelta
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
+from xor_broker.manifest import grant_for_selected_file  # noqa: E402
 from xor_broker.models import (  # noqa: E402
     ActionRequest, Capability, Operation, ResourceScope, ScopeKind, utcnow,
 )
@@ -75,6 +76,14 @@ class TestPolicy(SandboxCase):
             ActionRequest("t", Operation.WRITE_FILE, self.granted, b"x"), utcnow())
         self.assertTrue(d.allowed)
         self.assertTrue(d.requires_confirmation)
+
+    def test_file_scoped_list_dir_capability_is_not_allowed(self):
+        # Programmatic capabilities bypass manifest parsing, so policy must
+        # also refuse the mismatch the executor would reject.
+        cap = file_cap("t", Operation.LIST_DIR, self.docs)
+        d = self.engine(cap).evaluate(
+            ActionRequest("t", Operation.LIST_DIR, self.docs), utcnow())
+        self.assertFalse(d.allowed)
 
     def test_unsupported_operations_always_denied(self):
         e = self.engine(file_cap("t", Operation.READ_FILE, self.granted))
@@ -172,6 +181,23 @@ class TestScopedOpen(SandboxCase):
         with self.assertRaises(PathEscapeError):
             open_scoped_file(scope, os.path.join(self.docs, "..", "outside.txt"),
                              write=False)
+
+    def test_selected_directory_grant_uses_dir_scope_and_read_right(self):
+        cap = grant_for_selected_file("tool-a", Operation.LIST_DIR,
+                                      self.docs, "selected-dir")
+        self.assertEqual(cap.resource.kind, ScopeKind.DIR)
+        self.assertEqual(cap.rights, frozenset({"read"}))
+
+    def test_list_dir_selection_must_be_a_directory(self):
+        with self.assertRaises(ValueError):
+            grant_for_selected_file("tool-a", Operation.LIST_DIR,
+                                    self.granted, "not-a-dir")
+
+    def test_selected_file_grant_remains_exact_file_scope(self):
+        cap = grant_for_selected_file("tool-a", Operation.READ_FILE,
+                                      self.granted, "selected-file")
+        self.assertEqual(cap.resource.kind, ScopeKind.FILE)
+        self.assertEqual(cap.rights, frozenset({"read"}))
 
 
 if __name__ == "__main__":

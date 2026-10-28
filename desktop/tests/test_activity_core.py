@@ -53,6 +53,16 @@ class TestActivityCore(unittest.TestCase):
         self.assertIn("network_send", table)
         self.assertEqual(len(table.splitlines()), 4)
 
+    def test_malformed_log_is_reported_unavailable(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "audit.jsonl")
+            with open(path, "w") as fh:
+                fh.write("{not valid json}\n")
+            records, ok, n = activity_core.load(path)
+            self.assertEqual(records, [])
+            self.assertFalse(ok)
+            self.assertEqual(n, 0)
+
 
 if __name__ == "__main__":
     unittest.main()

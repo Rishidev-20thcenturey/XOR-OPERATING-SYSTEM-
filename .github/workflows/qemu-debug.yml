@@ -1,0 +1,260 @@
+name: QEMU boot diagnostics (manual)
+
+# Diagnostic run: test the PNG backdrop and xfdesktop debug output.
+
+# Diagnostic path only.  This workflow consumes an ISO image that was already
+# built by iso-build.yml, runs a bounded QEMU boot, and captures guest-side
+# LightDM/Xorg and XOR-session state through QEMU's guest agent.  It is
+# deliberately not part of the normal CI or release gate.
+on:
+  # workflow_dispatch is unavailable until a workflow exists on the default
+  # branch; this review-branch-only push trigger lets us run the diagnostic
+  # without touching main.
+  push:
+    branches:
+      - 'review/ac48e68-hardening'
+    paths:
+      - '.github/workflows/qemu-debug.yml'
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: GitHub Actions run that produced the ISO artifact
+        required: true
+        default: "40592073266"
+      iso_artifact:
+        description: ISO artifact name
+        required: true
+        default: xor-iso-image-40592073266
+      build_artifact:
+        description: Build-evidence artifact name
+        required: true
+        default: xor-build-evidence-40592073266
+      vga:
+        description: Display device to test
+        required: true
+        type: choice
+        default: virtio-none
+        options:
+          - virtio-none
+          - virtio-default
+          - std
+      wait_seconds:
+        description: Seconds to wait after the serial login prompt before querying
+        required: true
+        default: "240"
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  diagnose:
+    name: Boot existing ISO and collect guest logs
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      DEBIAN_FRONTEND: noninteractive
+      GH_TOKEN: ${{ github.token }}
+      RUN_ID: ${{ inputs.run_id || '40592073266' }}
+      ISO_ARTIFACT: ${{ inputs.iso_artifact || 'xor-iso-image-40592073266' }}
+      BUILD_ARTIFACT: ${{ inputs.build_artifact || 'xor-build-evidence-40592073266' }}
+      VGA_MODE: ${{ inputs.vga || 'virtio-none' }}
+      WAIT_SECONDS: ${{ inputs.wait_seconds || '240' }}
+
+    steps:
+      - name: Checkout review branch
+        uses: actions/checkout@v4
+
+      - name: Install QEMU and image tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            qemu-system-x86 xorriso socat imagemagick file
+
+      - name: Download ISO and build evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/iso artifacts/build
+          gh run download "$RUN_ID" \
+            --repo "$GITHUB_REPOSITORY" \
+            --name "$ISO_ARTIFACT" \
+            --dir artifacts/iso
+          gh run download "$RUN_ID" \
+            --repo "$GITHUB_REPOSITORY" \
+            --name "$BUILD_ARTIFACT" \
+            --dir artifacts/build
+          find artifacts -maxdepth 3 -type f -printf '%p %s bytes\n' | sort
+
+      - name: Verify ISO checksum
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p qemu-evidence
+          ISO=$(find artifacts/iso -type f -name '*.iso' -size +100M | head -n1)
+          test -n "$ISO" || { echo "ERROR: ISO not found" >&2; exit 1; }
+          SUM=$(find artifacts/build -type f -name '*.sha256' | head -n1)
+          test -n "$SUM" || { echo "ERROR: checksum file not found" >&2; exit 1; }
+          EXPECTED=$(awk 'NR==1 {print $1}' "$SUM")
+          ACTUAL=$(sha256sum "$ISO" | awk '{print $1}')
+          {
+            echo "iso=$ISO"
+            echo "expected_sha256=$EXPECTED"
+            echo "actual_sha256=$ACTUAL"
+            echo "iso_bytes=$(stat -c %s "$ISO")"
+          } | tee qemu-evidence/iso.txt
+          test "$EXPECTED" = "$ACTUAL"
+
+      - name: Extract live kernel and initrd
+        shell: bash
+        run: |
+          set -euo pipefail
+          ISO=$(find artifacts/iso -type f -name '*.iso' -size +100M | head -n1)
+          mkdir -p qemu-evidence/live
+          xorriso -osirrox on -indev "$ISO" \
+            -extract /live qemu-evidence/live \
+            > qemu-evidence/xorriso-extract.log 2>&1
+          KERNEL=$(find qemu-evidence/live -maxdepth 1 -type f -name 'vmlinuz*' | head -n1)
+          INITRD=$(find qemu-evidence/live -maxdepth 1 -type f -name 'initrd*' | head -n1)
+          test -n "$KERNEL" || { echo "ERROR: kernel not found" >&2; exit 1; }
+          test -n "$INITRD" || { echo "ERROR: initrd not found" >&2; exit 1; }
+          {
+            echo "kernel=$KERNEL"
+            echo "initrd=$INITRD"
+            file "$KERNEL" "$INITRD"
+          } | tee qemu-evidence/boot-inputs.txt
+
+      - name: Run bounded QEMU diagnostics
+        shell: bash
+        run: |
+          set -uo pipefail
+          ISO=$(find artifacts/iso -type f -name '*.iso' -size +100M | head -n1)
+          KERNEL=$(find qemu-evidence/live -maxdepth 1 -type f -name 'vmlinuz*' | head -n1)
+          INITRD=$(find qemu-evidence/live -maxdepth 1 -type f -name 'initrd*' | head -n1)
+          SERIAL="$PWD/qemu-evidence/serial.log"
+          MONITOR="$PWD/qemu-evidence/monitor.sock"
+          QGA="$PWD/qemu-evidence/qga.sock"
+          PPM="$PWD/qemu-evidence/screenshot.ppm"
+          PNG="$PWD/qemu-evidence/screenshot.png"
+          rm -f "$SERIAL" "$MONITOR" "$QGA" "$PPM" "$PNG"
+
+          case "$VGA_MODE" in
+            virtio-none)
+              VGA_ARGS=(-vga none -device virtio-vga)
+              ;;
+            virtio-default)
+              VGA_ARGS=(-device virtio-vga)
+              ;;
+            std)
+              VGA_ARGS=(-vga std)
+              ;;
+            *)
+              echo "ERROR: unsupported VGA mode: $VGA_MODE" >&2
+              exit 1
+              ;;
+          esac
+
+          APPEND="boot=live components hostname=XOR username=user"
+          APPEND="$APPEND console=ttyS0,115200 systemd.show_status=1 loglevel=6"
+          APPEND="$APPEND systemd.journald.forward_to_console=1"
+          APPEND="$APPEND systemd.wants=qemu-guest-agent.service"
+
+          qemu-system-x86_64 \
+            -machine q35,accel=tcg \
+            -cpu qemu64 \
+            -m 4096 -smp 2 \
+            -kernel "$KERNEL" \
+            -initrd "$INITRD" \
+            -append "$APPEND" \
+            -drive file="$ISO",media=cdrom,readonly=on,if=none,id=cdrom0 \
+            -device ide-cd,drive=cdrom0 \
+            "${VGA_ARGS[@]}" \
+            -device virtio-net-pci,netdev=net0 \
+            -netdev user,id=net0 \
+            -vnc 127.0.0.1:1 \
+            -serial "file:$SERIAL" \
+            -monitor "unix:$MONITOR,server,nowait" \
+            -chardev "socket,id=qga0,path=$QGA,server=on,wait=off" \
+            -device virtio-serial-pci,id=virtio-serial0 \
+            -device virtserialport,bus=virtio-serial0.0,chardev=qga0,name=org.qemu.guest_agent.0 \
+            -no-reboot \
+            > qemu-evidence/qemu-stdout.log 2>&1 &
+          QEMU_PID=$!
+          echo "$QEMU_PID" > qemu-evidence/qemu.pid
+          echo "qemu_pid=$QEMU_PID"
+
+          READY=0
+          for _ in $(seq 1 120); do
+            if [ -f "$SERIAL" ] && grep -q 'XOR login:' "$SERIAL"; then
+              READY=1
+              break
+            fi
+            if ! kill -0 "$QEMU_PID" 2>/dev/null; then
+              break
+            fi
+            sleep 5
+          done
+
+          echo "serial_login_prompt=$READY" | tee qemu-evidence/diagnostic-summary.txt
+          if [ "$READY" = 1 ]; then
+            sleep "$WAIT_SECONDS"
+          fi
+
+          python3 tools/qga-query.py "$QGA" qemu-evidence/guest-logs \
+            --connect-timeout 90 > qemu-evidence/qga-query.log 2>&1 || true
+          if [ -f qemu-evidence/guest-logs/qga-summary.txt ]; then
+            cat qemu-evidence/guest-logs/qga-summary.txt
+          else
+            cat qemu-evidence/qga-query.log || true
+          fi
+
+          {
+            echo "--- boot/display signals ---"
+            grep -Ei \
+              'Reached target Graphical Interface|Started LightDM|Started lightdm\.service|XOR login:|Job lightdm' \
+              "$SERIAL" 2>/dev/null | tail -n 40 || true
+            echo "--- qemu process ---"
+            if kill -0 "$QEMU_PID" 2>/dev/null; then
+              echo "running"
+            else
+              echo "exited"
+            fi
+          } | tee -a qemu-evidence/diagnostic-summary.txt
+
+          if [ -S "$MONITOR" ]; then
+            printf 'screendump %s\n' "$PPM" |
+              timeout 15 socat - UNIX-CONNECT:"$MONITOR" \
+                > qemu-evidence/screendump.log 2>&1 || true
+            if [ -s "$PPM" ] && command -v convert >/dev/null 2>&1; then
+              convert "$PPM" "$PNG" >> qemu-evidence/screendump.log 2>&1 || true
+            fi
+            if [ -s "$PNG" ] && command -v identify >/dev/null 2>&1; then
+              identify "$PNG" > qemu-evidence/screenshot-info.txt 2>&1 || true
+            fi
+          fi
+
+          if kill -0 "$QEMU_PID" 2>/dev/null; then
+            if [ -S "$MONITOR" ]; then
+              printf 'quit\n' | timeout 5 socat - UNIX-CONNECT:"$MONITOR" \
+                > /dev/null 2>&1 || true
+            fi
+            sleep 3
+            kill "$QEMU_PID" 2>/dev/null || true
+          fi
+          wait "$QEMU_PID" 2>/dev/null || true
+
+      - name: Upload diagnostic evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: xor-qemu-debug-${{ github.run_id }}
+          path: |
+            qemu-evidence/*.txt
+            qemu-evidence/*.log
+            qemu-evidence/*.png
+            qemu-evidence/*.ppm
+            qemu-evidence/guest-logs/**
+          if-no-files-found: warn
+          retention-days: 14

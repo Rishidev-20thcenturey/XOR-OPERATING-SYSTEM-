@@ -32,8 +32,11 @@ from .core import (
     discover_apps,
     group_apps,
     load_config,
+    panel_gradient_css,
+    resolve_wallpaper,
     search_apps,
 )
+from .control_center import apply_xfce_wallpaper
 
 
 def _load_gtk():
@@ -81,6 +84,7 @@ class XorShell:
         self._dock_recentring = False
 
         self._install_css()
+        self._apply_wallpaper()
         self.launcher = self._build_launcher()
         self.command_centre = self._build_command_centre()
         if not launcher_only:
@@ -105,11 +109,32 @@ class XorShell:
             css += asset.read_text(encoding="utf-8")
         except OSError:
             pass
+        # Apply the saved panel opacity and reduce-motion preference.  An
+        # appearance control that saves a value but never uses it is a
+        # fake control; keep these declarations next to the base theme.
+        css += "\n.shell-panel {\n  " + panel_gradient_css(self.config.panel_opacity) + "\n}\n"
+        if self.config.reduce_motion:
+            # GTK 3 CSS has no transition property; setting the toolkit
+            # animation preference is the supported way to honour this.
+            settings = self.Gtk.Settings.get_default()
+            if settings is not None:
+                settings.set_property("gtk-enable-animations", False)
         provider = self.Gtk.CssProvider()
         provider.load_from_data(css.encode("utf-8"))
         screen = self.Gdk.Screen.get_default()
         self.Gtk.StyleContext.add_provider_for_screen(
             screen, provider, self.Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
+
+    def _apply_wallpaper(self):
+        """Apply the configured backdrop after XFCE has migrated its keys.
+
+        xfdesktop's first-login migration can reset the single-image keys to
+        desktop-base defaults even when /etc/skel supplies XOR values.  The
+        running shell is the reliable owner of the live-session backdrop.
+        """
+        wallpaper = resolve_wallpaper(self.config.wallpaper)
+        if wallpaper:
+            apply_xfce_wallpaper(wallpaper)
 
     # ------------------------------------------------------------ helpers
     def _shell_window(self, title: str, dock_hint: bool = True):
@@ -247,8 +272,12 @@ class XorShell:
     # ------------------------------------------------------------------ dock
     def _build_dock(self):
         win = self._shell_window("XOR Dock")
-        frame = self.Gtk.Box(orientation=self.Gtk.Orientation.HORIZONTAL, spacing=8)
+        orientation = (self.Gtk.Orientation.VERTICAL
+                       if self.config.dock_position == "left"
+                       else self.Gtk.Orientation.HORIZONTAL)
+        frame = self.Gtk.Box(orientation=orientation, spacing=8)
         frame.get_style_context().add_class("floating-dock")
+        self.dock_frame = frame
         win.add(frame)
 
         launcher_btn = self.Gtk.Button()
@@ -263,10 +292,12 @@ class XorShell:
             if app:
                 frame.add(self._dock_app_button(app))
 
-        separator = self.Gtk.Separator(orientation=self.Gtk.Orientation.VERTICAL)
+        separator = self.Gtk.Separator(
+            orientation=(self.Gtk.Orientation.HORIZONTAL
+                         if orientation == self.Gtk.Orientation.VERTICAL
+                         else self.Gtk.Orientation.VERTICAL))
         frame.add(separator)
-        self.running_box = self.Gtk.Box(
-            orientation=self.Gtk.Orientation.HORIZONTAL, spacing=6)
+        self.running_box = self.Gtk.Box(orientation=orientation, spacing=6)
         frame.add(self.running_box)
 
         trash = self.Gtk.Button()
@@ -294,8 +325,12 @@ class XorShell:
             geo = self._monitor_geometry()
             width = self.dock.get_allocated_width()
             height = self.dock.get_allocated_height()
-            x = geo.x + max(0, (geo.width - width) // 2)
-            y = geo.y + max(0, geo.height - height - 14)
+            if self.config.dock_position == "left":
+                x = geo.x + 14
+                y = geo.y + max(0, (geo.height - height) // 2)
+            else:
+                x = geo.x + max(0, (geo.width - width) // 2)
+                y = geo.y + max(0, geo.height - height - 14)
             self.dock.move(x, y)
         finally:
             self._dock_recentring = False

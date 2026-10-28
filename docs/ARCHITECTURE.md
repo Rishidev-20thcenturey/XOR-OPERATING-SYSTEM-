@@ -36,7 +36,7 @@
 | Assistant stub | `assistant/src/xor_assistant/` | Future connection point; **disabled**, read-only declared surface | broker client (future) |
 | Security corpus | `security/` | 200 deterministic scenarios + acceptance criteria | broker public API |
 | OS image | `os/live-build/` | Debian trixie + XFCE live ISO assembling all of the above | Debian Live Build |
-| Tooling | `tools/` | build-iso, run-qemu (fixed virt target), test, validate | — |
+| Tooling | `tools/` | build-iso, check-packages, run-qemu (fixed virt target), test, test-build-iso, validate | — |
 
 Separation rule: the **policy engine has no UI, storage or model
 dependencies**. Replacing the confirmation dialog, the log viewer or
@@ -71,7 +71,8 @@ the desktop shell must not require touching `policy.py`, `paths.py` or
   are mediated. Same-user processes can still open your files directly.
   Isolating tool/assistant processes (bubblewrap/Flatpak portals) so
   the broker is their only path is the Milestone-4 direction.
-* Tool identity over the socket is self-declared (peer UID/PID are
-  recorded, names are not authenticated yet).
+* Tool identity over the socket is self-declared (peer UID/PID are read
+  and returned in the response, but not used for authorization; names
+  are not authenticated yet).
 * No updater yet — `docs/UPDATE_DESIGN.md` is design only.
 * No LLM, no network capability for tools, by design.

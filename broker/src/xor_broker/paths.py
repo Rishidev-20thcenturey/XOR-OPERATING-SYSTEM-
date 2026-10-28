@@ -18,7 +18,12 @@ Known residual (documented, not hidden): a *hard link* inside a granted
 directory can alias an inode that also exists outside the directory; FD
 traversal cannot distinguish that.  File grants obtained via file
 selection can pin ``(st_dev, st_ino)`` (see ``Capability.pin_*``) which
-the executor verifies after opening.
+the executor verifies after opening.  Write opens never use ``O_TRUNC``;
+the executor validates the target (and any pin) before it replaces or
+truncates content.  Unpinned writes stage content in a private 0700
+subdirectory of the target directory (anchored to the opened parent FD)
+and rename it into place; pinned writes update the pinned inode in place so
+the grant keeps referring to the same inode (see ``executor.py``).
 """
 
 from __future__ import annotations
@@ -100,10 +105,14 @@ def _walk_to_parent_fd(base_fd: int, components: list) -> int:
         raise
 
 
-def open_scoped_file(scope: ResourceScope, canonical_target: str, write: bool) -> int:
-    """Open ``canonical_target`` strictly inside ``scope``. Returns an FD.
+def open_scoped_parent(scope: ResourceScope, canonical_target: str) -> tuple:
+    """Open ``canonical_target``'s parent directory strictly inside ``scope``.
 
-    Never follows symlinks. Raises PathEscapeError on any escape attempt.
+    Returns ``(parent_fd, basename)``.  The caller owns ``parent_fd``.  Every
+    traversed component is opened with ``dir_fd`` + ``O_NOFOLLOW`` and ``..``
+    components are rejected, exactly like :func:`open_scoped_file`.  The final
+    component is deliberately *not* opened here: callers that stage and rename
+    must apply ``lstat``/``rename`` semantics without following it.
     """
     if scope.kind is ScopeKind.DIR:
         if not is_within(scope.path, canonical_target):
@@ -123,14 +132,35 @@ def open_scoped_file(scope: ResourceScope, canonical_target: str, write: bool) -
         parent_fd = _walk_to_parent_fd(base_fd, components)
     finally:
         os.close(base_fd)
+    return parent_fd, components[-1]
 
+
+def open_scoped_file(scope: ResourceScope, canonical_target: str, write: bool,
+                     create: bool = True) -> int:
+    """Open ``canonical_target`` strictly inside ``scope``. Returns an FD.
+
+    Never follows symlinks. Raises PathEscapeError on any escape attempt.
+
+    Write opens deliberately omit ``O_TRUNC``: the executor must validate the
+    target (including any inode pin) *before* changing content.  ``create`` is
+    false for pinned grants so a vanished selected file cannot be silently
+    recreated under the same path.
+    """
+    parent_fd, name = open_scoped_parent(scope, canonical_target)
     flags = os.O_NOFOLLOW
-    flags |= (os.O_WRONLY | os.O_CREAT | os.O_TRUNC) if write else os.O_RDONLY
+    if write:
+        flags |= os.O_WRONLY
+        if create:
+            flags |= os.O_CREAT
+    else:
+        flags |= os.O_RDONLY
     try:
-        return os.open(components[-1], flags, 0o644, dir_fd=parent_fd)
+        # Newly created files are private by default.  Existing files keep
+        # their mode; the user can loosen it deliberately after the write.
+        return os.open(name, flags, 0o600, dir_fd=parent_fd)
     except OSError as exc:
         if exc.errno == errno.ELOOP:
-            raise PathEscapeError(f"final component is a symlink: {components[-1]}") from exc
+            raise PathEscapeError(f"final component is a symlink: {name}") from exc
         raise
     finally:
         os.close(parent_fd)

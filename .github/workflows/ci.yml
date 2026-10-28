@@ -32,13 +32,14 @@ jobs:
         run: |
           shellcheck -s sh \
             tools/build-iso.sh tools/run-qemu.sh tools/test.sh tools/validate.sh \
+            tools/test-build-iso.sh \
             os/live-build/auto/config os/live-build/auto/build os/live-build/auto/clean \
             os/live-build/config/hooks/normal/0900-xor-install.hook.chroot \
             desktop/scripts/xor-broker-autostart.sh \
             desktop/scripts/xor-broker-demo-run.sh \
             desktop/scripts/xor-shell-autostart.sh
 
-  # NOTE: no ISO build job. Debian Live Build needs root + mirror access
-  # + GBs of packages; fast, honest CI matters more for the baseline.
-  # ISO builds happen on team machines via tools/build-iso.sh, with the
-  # checksum + BUILD-MANIFEST.txt checked into release notes manually.
+  # NOTE: the dedicated ISO build/QEMU smoke job lives in
+  # .github/workflows/iso-build.yml; this fast workflow does not run it.
+  # Debian Live Build needs root + mirror access + GBs of packages; the
+  # dedicated workflow owns that slower, evidence-producing path.

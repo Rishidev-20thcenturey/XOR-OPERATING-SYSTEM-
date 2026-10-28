@@ -5,6 +5,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "broker", "src"))
@@ -19,6 +20,7 @@ from xor_shell.core import (  # noqa: E402
     load_config,
     memory_summary,
     network_label,
+    panel_gradient_css,
     parse_battery,
     parse_desktop_file,
     save_config,
@@ -104,6 +106,21 @@ class TestConfigAndStatus(unittest.TestCase):
             self.assertEqual(loaded.accent, "solar")
             self.assertEqual(json.loads(path.read_text())["pinned_apps"], ["Thunar.desktop"])
 
+    def test_malformed_config_falls_back_to_defaults(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "shell.json"
+            path.write_text('["not", "an", "object"]', encoding="utf-8")
+            cfg = load_config(path)
+            self.assertEqual(cfg.accent, "aurora")
+            self.assertEqual(cfg.wallpaper, "xor-royal-aurora.jpg")
+
+    def test_panel_opacity_is_actually_emitted(self):
+        css = panel_gradient_css(0.70)
+        self.assertIn("rgba(10, 16, 30, 0.70)", css)
+        # Values outside the UI range are clamped, not trusted.
+        self.assertIn("rgba(10, 16, 30, 0.52)", panel_gradient_css(0.1))
+        self.assertIn("rgba(10, 16, 30, 0.96)", panel_gradient_css(2.0))
+
     def test_battery_memory_network_parsers(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -132,6 +149,41 @@ class TestConfigAndStatus(unittest.TestCase):
         self.assertIn("XOR Control Centre", text)
         self.assertIn("Aurora", text)
         self.assertIn("Broker log:", text)
+
+
+class TestWallpaperApplication(unittest.TestCase):
+    def test_applies_single_and_workspace_keys(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            wallpaper = Path(tmp) / "wallpaper.jpg"
+            wallpaper.write_bytes(b"\xff\xd8\xff")
+            with patch.object(control_center.shutil, "which",
+                              return_value="/usr/bin/xfconf-query"), \
+                    patch.object(control_center, "_xfce_monitor_names",
+                                 return_value=["monitorVirtual-1"]), \
+                    patch.object(control_center.subprocess, "run") as run:
+                run.return_value.returncode = 0
+                self.assertTrue(control_center.apply_xfce_wallpaper(wallpaper))
+                props = []
+                for call in run.call_args_list:
+                    argv = call.args[0]
+                    if "-p" in argv:
+                        props.append(argv[argv.index("-p") + 1])
+                self.assertIn("/backdrop/screen0/monitor0/last-image", props)
+                self.assertIn("/backdrop/screen0/monitor0/last-single-image", props)
+                self.assertIn("/backdrop/screen0/monitor0/image-path", props)
+                self.assertIn("/backdrop/screen0/monitor0/image-show", props)
+                self.assertIn("/backdrop/screen0/monitor0/workspace0/last-image", props)
+                self.assertIn("/backdrop/screen0/monitor0/workspace1/last-image", props)
+                self.assertIn(
+                    "/backdrop/screen0/monitorVirtual-1/last-image", props)
+                self.assertIn(
+                    "/backdrop/screen0/monitorVirtual-1/workspace0/last-image",
+                    props)
+                self.assertIn(
+                    "/backdrop/screen0/monitorVirtual-1/workspace0/image-style",
+                    props)
+                commands = [call.args[0] for call in run.call_args_list]
+                self.assertIn(["xfdesktop", "--reload"], commands)
 
 
 if __name__ == "__main__":

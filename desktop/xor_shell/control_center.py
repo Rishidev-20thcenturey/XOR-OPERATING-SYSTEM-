@@ -30,19 +30,91 @@ from .core import (
 PAGES = ("overview", "appearance", "security", "system", "about")
 
 
+def _xfce_monitor_names() -> List[str]:
+    """Return XFCE 4.20 connector-key names for the connected monitors.
+
+    XFCE 4.20 keys backdrops by connector (for QEMU: ``monitorVirtual-1``)
+    rather than by the older ``monitor0``/``monitor1`` indexes.  A static
+    skel file cannot know the connector name, so the live shell discovers it
+    from xrandr before applying the wallpaper.
+    """
+    names: List[str] = []
+    if not shutil.which("xrandr"):
+        return names
+    try:
+        result = subprocess.run(
+            ["xrandr", "--query"], capture_output=True, text=True,
+            check=False, timeout=3)
+    except (OSError, subprocess.SubprocessError):
+        return names
+    stdout = result.stdout if isinstance(result.stdout, str) else ""
+    if result.returncode == 0:
+        for line in stdout.splitlines():
+            fields = line.split()
+            if len(fields) >= 2 and fields[1] == "connected":
+                names.append("monitor" + fields[0])
+    return names
+
+
 def apply_xfce_wallpaper(wallpaper_path: Path) -> bool:
     """Apply an XFCE desktop backdrop via xfconf-query if present."""
     if not shutil.which("xfconf-query") or not wallpaper_path.is_file():
         return False
     ok = True
-    for workspace in ("workspace0", "workspace1"):
-        prop = f"/backdrop/screen0/monitor0/{workspace}/last-image"
+    # Keep the legacy index keys for older XFCE releases, and also write the
+    # connector-named keys used by XFCE 4.20's xfdesktop.
+    monitors = ["monitor0", "monitor1"]
+    for monitor in _xfce_monitor_names():
+        if monitor not in monitors:
+            monitors.append(monitor)
+    for monitor in monitors:
+        for prop in (
+            f"/backdrop/screen0/{monitor}/last-image",
+            f"/backdrop/screen0/{monitor}/last-single-image",
+            f"/backdrop/screen0/{monitor}/image-path",
+            f"/backdrop/screen0/{monitor}/workspace0/last-image",
+            f"/backdrop/screen0/{monitor}/workspace1/last-image",
+        ):
+            result = subprocess.run(
+                ["xfconf-query", "-c", "xfce4-desktop", "-p", prop,
+                 "-s", str(wallpaper_path), "--create", "-t", "string"],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                check=False)
+            if result.returncode != 0:
+                # --create is rejected for an existing property; a plain set
+                # is the normal path for an already-populated channel.
+                result = subprocess.run(
+                    ["xfconf-query", "-c", "xfce4-desktop", "-p", prop,
+                     "-s", str(wallpaper_path)],
+                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                    check=False)
+            ok = ok and result.returncode == 0
+        show_prop = f"/backdrop/screen0/{monitor}/image-show"
         result = subprocess.run(
-            ["xfconf-query", "-c", "xfce4-desktop", "-p", prop,
-             "-s", str(wallpaper_path), "--create", "-t", "string"],
+            ["xfconf-query", "-c", "xfce4-desktop", "-p", show_prop,
+             "-s", "true", "--create", "-t", "bool"],
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
-        ok = ok and result.returncode == 0
-    return ok
+        if result.returncode != 0:
+            result = subprocess.run(
+                ["xfconf-query", "-c", "xfce4-desktop", "-p", show_prop,
+                 "-s", "true"],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                check=False)
+        for workspace in ("workspace0", "workspace1"):
+            style_prop = (
+                f"/backdrop/screen0/{monitor}/{workspace}/image-style")
+            subprocess.run(
+                ["xfconf-query", "-c", "xfce4-desktop", "-p", style_prop,
+                 "-s", "5", "--create", "-t", "int"],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                check=False)
+    # xfconf-query changes are not always enough for xfdesktop 4.20 to
+    # repaint the already-running desktop; ask it to reload its settings.
+    if shutil.which("xfdesktop"):
+        subprocess.run(
+            ["xfdesktop", "--reload"],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+    return ok and result.returncode == 0
 
 
 def audit_summary(audit_path: Optional[str] = None) -> dict:
@@ -135,7 +207,9 @@ class ControlCentre:  # pragma: no cover - GTK requires display
         outer.add(sidebar)
 
         self.stack = Gtk.Stack()
-        self.stack.set_transition_type(Gtk.StackTransitionType.CROSSFADE)
+        self.stack.set_transition_type(
+            Gtk.StackTransitionType.NONE if self.config.reduce_motion
+            else Gtk.StackTransitionType.CROSSFADE)
         self.stack.set_hexpand(True)
         outer.add(self.stack)
 
@@ -271,6 +345,18 @@ class ControlCentre:  # pragma: no cover - GTK requires display
         self.dock_scale.set_digits(0)
         box.add(self.dock_scale)
 
+        box.add(self._label("Dock position"))
+        dock_row = self.Gtk.Box(orientation=self.Gtk.Orientation.HORIZONTAL, spacing=8)
+        self.dock_position_buttons = {}
+        first = None
+        for key, label in (("bottom", "Bottom"), ("left", "Left")):
+            btn = self.Gtk.RadioButton.new_with_label_from_widget(first, label)
+            first = first or btn
+            btn.set_active(self.config.dock_position == key)
+            dock_row.add(btn)
+            self.dock_position_buttons[key] = btn
+        box.add(dock_row)
+
         box.add(self._label("Panel opacity"))
         self.opacity_scale = self.Gtk.Scale.new_with_range(
             self.Gtk.Orientation.HORIZONTAL, 0.52, 0.96, 0.02)
@@ -328,6 +414,9 @@ class ControlCentre:  # pragma: no cover - GTK requires display
         self.config.dock_icon_size = int(self.dock_scale.get_value())
         self.config.panel_opacity = float(self.opacity_scale.get_value())
         self.config.reduce_motion = self.reduce_motion.get_active()
+        for key, button in self.dock_position_buttons.items():
+            if button.get_active():
+                self.config.dock_position = key
         target = save_config(self.config)
         wallpaper = resolve_wallpaper(self.config.wallpaper)
         applied = apply_xfce_wallpaper(wallpaper) if wallpaper else False
