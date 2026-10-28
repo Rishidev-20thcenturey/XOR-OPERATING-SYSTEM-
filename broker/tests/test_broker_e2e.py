@@ -8,6 +8,7 @@ import os
 import stat
 import sys
 import tempfile
+import types
 import threading
 import time
 import unittest
@@ -1160,6 +1161,86 @@ class TestAuditHardening(BrokerCase):
         self.assertEqual(stat.S_IMODE(os.stat(target).st_mode), 0o644)
 
 
+class TestGtkConfirmationTimer(unittest.TestCase):
+    def test_answering_dialog_removes_pending_timeout_source(self):
+        from xor_broker.confirm import ConfirmationPrompt
+        from xor_broker.confirm_gtk import GtkConfirmation
+
+        class FakeGLib:
+            removed_sources = []
+
+            @staticmethod
+            def markup_escape_text(value):
+                return value
+
+            @staticmethod
+            def timeout_add_seconds(_seconds, _callback):
+                return 47
+
+            @classmethod
+            def source_remove(cls, source_id):
+                cls.removed_sources.append(source_id)
+                return True
+
+        class FakeBox:
+            def set_spacing(self, *_args): pass
+            def set_margin_top(self, *_args): pass
+            def set_margin_bottom(self, *_args): pass
+            def set_margin_start(self, *_args): pass
+            def set_margin_end(self, *_args): pass
+            def add(self, *_args): pass
+
+        class FakeLabel:
+            def __init__(self, **_kwargs): pass
+            def set_markup(self, *_args): pass
+            def set_xalign(self, *_args): pass
+            def set_line_wrap(self, *_args): pass
+            def set_selectable(self, *_args): pass
+
+        class FakeButton:
+            def grab_focus(self): pass
+            def get_style_context(self): return self
+            def add_class(self, *_args): pass
+
+        class FakeDialog:
+            def __init__(self, **_kwargs):
+                self.box = FakeBox()
+            def set_modal(self, *_args): pass
+            def set_default_size(self, *_args): pass
+            def get_content_area(self): return self.box
+            def add_button(self, *_args): return FakeButton()
+            def connect(self, *_args): pass
+            def show_all(self): pass
+            def run(self): return 1  # immediate Approve Once response
+            def response(self, *_args): pass
+            def destroy(self): pass
+
+        fake_gtk = types.ModuleType("gi.repository.Gtk")
+        fake_gtk.Dialog = FakeDialog
+        fake_gtk.Label = FakeLabel
+        fake_gtk.ResponseType = types.SimpleNamespace(REJECT=0, ACCEPT=1)
+        fake_gtk.events_pending = lambda: False
+        fake_gtk.main_iteration = lambda: None
+
+        fake_repository = types.ModuleType("gi.repository")
+        fake_repository.GLib = FakeGLib
+        fake_repository.Gtk = fake_gtk
+        fake_gi = types.ModuleType("gi")
+        fake_gi.__path__ = []
+        fake_gi.require_version = lambda *_args: None
+
+        prompt = ConfirmationPrompt(
+            pending_id="test", tool="demo", operation="write_file",
+            target="/tmp/target", description="test", preview="1 byte",
+        )
+        with patch.dict(sys.modules, {
+                "gi": fake_gi, "gi.repository": fake_repository}):
+            approved = GtkConfirmation().confirm(prompt)
+
+        self.assertTrue(approved)
+        self.assertEqual(FakeGLib.removed_sources, [47])
+
+
 class TestSocketRoundTrip(BrokerCase):
     def test_client_server_and_denials(self):
         from xor_broker.server import BrokerClient, BrokerError, serve
@@ -1182,6 +1263,76 @@ class TestSocketRoundTrip(BrokerCase):
         self.assertEqual(resp["status"], "executed")
         self.assertEqual(stat.S_IMODE(os.stat(sock).st_mode), 0o600)
 
+
+    def test_read_proceeds_while_write_confirmation_is_waiting(self):
+        from xor_broker.server import BrokerClient, serve
+
+        prompt_started = threading.Event()
+        approve_write = threading.Event()
+
+        class BlockingConfirmation:
+            def confirm(self, _prompt):
+                prompt_started.set()
+                return approve_write.wait(8)
+
+        broker, paths, _audit_path = self.make(BlockingConfirmation())
+        sock = os.path.join(self.root, "concurrent-broker.sock")
+        server_thread = threading.Thread(
+            target=serve, args=(broker, sock), daemon=True)
+        server_thread.start()
+        for _ in range(100):
+            if os.path.exists(sock):
+                break
+            threading.Event().wait(0.05)
+
+        writer = BrokerClient("tool-a", sock, timeout=10)
+        reader = BrokerClient("tool-a", sock, timeout=3)
+        write_results = []
+        write_errors = []
+        read_results = []
+        read_errors = []
+        read_done = threading.Event()
+
+        def do_write():
+            try:
+                write_results.append(
+                    writer.write_file(paths["out.txt"], b"confirmed content"))
+            except Exception as exc:
+                write_errors.append(exc)
+
+        def do_read():
+            try:
+                read_results.append(reader.read_file(paths["granted.txt"]))
+            except Exception as exc:
+                read_errors.append(exc)
+            finally:
+                read_done.set()
+
+        write_thread = threading.Thread(target=do_write, daemon=True)
+        read_thread = None
+        write_thread.start()
+        try:
+            self.assertTrue(prompt_started.wait(2),
+                            "write never reached its confirmation prompt")
+            read_thread = threading.Thread(target=do_read, daemon=True)
+            read_thread.start()
+            self.assertTrue(
+                read_done.wait(1.5),
+                "a pending write confirmation blocked an unrelated broker read")
+            self.assertEqual(read_results, [b"hello granted"])
+            self.assertEqual(read_errors, [])
+        finally:
+            # Always release the prompt so a failing regression cannot strand
+            # a worker until its test-only timeout.
+            approve_write.set()
+            write_thread.join(5)
+            if read_thread is not None:
+                read_thread.join(5)
+
+        self.assertFalse(write_thread.is_alive(), "write request did not finish")
+        self.assertFalse(write_errors, f"write request failed: {write_errors}")
+        self.assertEqual(len(write_results), 1)
+        self.assertEqual(write_results[0]["status"], "executed")
 
 if __name__ == "__main__":
     unittest.main()

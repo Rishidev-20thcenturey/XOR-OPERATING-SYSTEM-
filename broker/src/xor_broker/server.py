@@ -29,6 +29,7 @@ import json
 import os
 import socket
 import struct
+import threading
 
 from .broker import Broker
 from .models import ActionRequest, Operation
@@ -84,16 +85,29 @@ def serve(broker: Broker, socket_path: str,
             os.umask(old_umask)
         os.chmod(socket_path, 0o600)
         srv.listen(8)
+        active_workers = threading.BoundedSemaphore(8)
         try:
+            # A confirmation can wait up to 120 seconds.  Do not make the
+            # accept loop wait for that one client: daemon worker threads let
+            # other requests progress, while the semaphore caps concurrency.
             while True:
                 conn, _ = srv.accept()
-                with conn:
+                if not active_workers.acquire(blocking=False):
+                    # Fail closed under overload; do not create unbounded
+                    # threads or leave an unserved client socket open.
+                    conn.close()
+                    continue
+
+                def run_connection(client_conn):
                     try:
-                        conn.settimeout(connection_timeout)
-                        _handle_conn(broker, conn)
-                    except (ConnectionError, OSError):
-                        # A timed-out/broken client must not kill the daemon.
-                        continue
+                        _serve_connection(broker, client_conn, connection_timeout)
+                    finally:
+                        active_workers.release()
+
+                threading.Thread(
+                    target=run_connection, args=(conn,),
+                    name="xor-broker-client", daemon=True,
+                ).start()
         finally:
             srv.close()
             if os.path.exists(socket_path):
@@ -104,6 +118,18 @@ def serve(broker: Broker, socket_path: str,
         except OSError:
             pass
         os.close(lock_fd)
+
+
+def _serve_connection(broker: Broker, conn: socket.socket,
+                      connection_timeout: float) -> None:
+    """Handle one client without blocking the listener or other workers."""
+    with conn:
+        try:
+            conn.settimeout(connection_timeout)
+            _handle_conn(broker, conn)
+        except (ConnectionError, OSError):
+            # A timed-out/broken client must not kill the daemon.
+            return
 
 
 def _handle_conn(broker: Broker, conn: socket.socket) -> None:
