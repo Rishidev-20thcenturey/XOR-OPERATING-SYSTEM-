@@ -8,6 +8,8 @@ policy is a policy nobody reviewed).  Unsupported operations
 
 from __future__ import annotations
 
+import contextlib
+import fcntl
 import json
 import os
 import stat
@@ -229,26 +231,51 @@ def _capability_entry(cap: Capability) -> dict:
     return entry
 
 
+@contextlib.contextmanager
+def _manifest_lock(path: str):
+    """Serialize read-modify-write grants so a revoke cannot be undone."""
+    lock_path = os.path.abspath(path) + ".lock"
+    os.makedirs(os.path.dirname(lock_path), mode=0o700, exist_ok=True)
+    fd = os.open(lock_path, os.O_CREAT | os.O_RDWR | os.O_CLOEXEC |
+                 os.O_NOFOLLOW, 0o600)
+    try:
+        try:
+            os.fchmod(fd, 0o600)
+        except OSError:
+            pass
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        yield
+    finally:
+        try:
+            fcntl.flock(fd, fcntl.LOCK_UN)
+        except OSError:
+            pass
+        os.close(fd)
+
+
 def add_capability(path: str, capability: Capability) -> None:
     """Append one validated grant to a manifest atomically."""
-    data = _read_manifest_json(path)
-    if any(entry.get("capability_id") == capability.capability_id
-           for entry in data["capabilities"] if isinstance(entry, dict)):
-        raise ManifestError(f"capability_id already exists: {capability.capability_id}")
-    data["capabilities"].append(_capability_entry(capability))
-    _write_manifest_json(path, data)
+    with _manifest_lock(path):
+        data = _read_manifest_json(path)
+        if any(entry.get("capability_id") == capability.capability_id
+               for entry in data["capabilities"] if isinstance(entry, dict)):
+            raise ManifestError(
+                f"capability_id already exists: {capability.capability_id}")
+        data["capabilities"].append(_capability_entry(capability))
+        _write_manifest_json(path, data)
 
 
 def remove_capability(path: str, capability_id: str) -> None:
     """Remove one grant by id, leaving the rest of the manifest untouched."""
-    data = _read_manifest_json(path)
-    kept = [entry for entry in data["capabilities"]
-            if not (isinstance(entry, dict)
-                    and entry.get("capability_id") == capability_id)]
-    if len(kept) == len(data["capabilities"]):
-        raise ManifestError(f"capability_id not found: {capability_id}")
-    data["capabilities"] = kept
-    _write_manifest_json(path, data)
+    with _manifest_lock(path):
+        data = _read_manifest_json(path)
+        kept = [entry for entry in data["capabilities"]
+                if not (isinstance(entry, dict)
+                        and entry.get("capability_id") == capability_id)]
+        if len(kept) == len(data["capabilities"]):
+            raise ManifestError(f"capability_id not found: {capability_id}")
+        data["capabilities"] = kept
+        _write_manifest_json(path, data)
 
 
 def grant_for_selected_file(tool: str, operation: Operation, selected_path: str,

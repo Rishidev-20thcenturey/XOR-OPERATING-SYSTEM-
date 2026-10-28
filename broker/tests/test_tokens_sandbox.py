@@ -257,6 +257,37 @@ class ManifestEditingCase(unittest.TestCase):
             self.assertEqual(load_manifest(manifest), [])
             self.assertEqual(stat.S_IMODE(os.stat(manifest).st_mode), 0o600)
 
+    def test_concurrent_grants_do_not_lose_each_other(self):
+        with tempfile.TemporaryDirectory() as root:
+            selected = os.path.join(root, "selected.txt")
+            with open(selected, "w") as fh:
+                fh.write("selected")
+            manifest = os.path.join(root, "manifest.json")
+            with open(manifest, "w") as fh:
+                json.dump({"capabilities": []}, fh)
+            caps = [grant_for_selected_file(
+                "tool-a", Operation.READ_FILE, selected, f"cap-{i}")
+                for i in range(2)]
+            barrier = threading.Barrier(2)
+            errors = []
+
+            def add(cap):
+                barrier.wait()
+                try:
+                    add_capability(manifest, cap)
+                except Exception as exc:  # pragma: no cover - failure path
+                    errors.append(exc)
+
+            threads = [threading.Thread(target=add, args=(cap,)) for cap in caps]
+            for thread in threads:
+                thread.start()
+            for thread in threads:
+                thread.join()
+            self.assertEqual(errors, [])
+            self.assertEqual(
+                {cap.capability_id for cap in load_manifest(manifest)},
+                {"cap-0", "cap-1"})
+
     def test_cli_grant_and_revoke_wire_the_manifest(self):
         with tempfile.TemporaryDirectory() as root:
             selected = os.path.join(root, "selected.txt")
