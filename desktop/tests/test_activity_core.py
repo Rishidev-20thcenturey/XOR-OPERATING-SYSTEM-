@@ -8,6 +8,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "broker", "src"))
 
 import activity_core  # noqa: E402
+import xor_activity  # noqa: E402
 from xor_broker.audit import AuditLog  # noqa: E402
 from xor_broker.broker import Broker  # noqa: E402
 from xor_broker.confirm import ConfirmationManager, ScriptedConfirmation  # noqa: E402
@@ -63,6 +64,61 @@ class TestActivityCore(unittest.TestCase):
             self.assertFalse(ok)
             self.assertEqual(n, 0)
 
+
+    def test_filter_toggle_sync_does_not_recurse_and_keeps_one_selected(self):
+        state = {"filter": "all", "query": "", "refreshing": False}
+        refresh_calls = []
+
+        class Toggle:
+            def __init__(self):
+                self.active = False
+                self.callback = None
+
+            def connect(self, signal, callback):
+                assert signal == "toggled"
+                self.callback = callback
+
+            def get_active(self):
+                return self.active
+
+            def set_active(self, active):
+                if active == self.active:
+                    return
+                self.active = active
+                if self.callback is not None:
+                    self.callback(self)
+
+        buttons = {name: Toggle()
+                   for name in ("all", "executed", "denied", "failed")}
+
+        def refresh():
+            refresh_calls.append(state["filter"])
+            xor_activity._sync_filter_buttons(buttons, state["filter"], state)
+
+        for name, button in buttons.items():
+            button.connect(
+                "toggled",
+                lambda btn, selected=name: xor_activity._on_filter_toggled(
+                    selected, btn, state, refresh),
+            )
+
+        xor_activity._sync_filter_buttons(buttons, state["filter"], state)
+        self.assertTrue(buttons["all"].get_active())
+        self.assertEqual(sum(b.get_active() for b in buttons.values()), 1)
+
+        # Simulate a user selecting another filter.
+        buttons["executed"].set_active(True)
+        self.assertEqual(state["filter"], "executed")
+        self.assertTrue(buttons["executed"].get_active())
+        self.assertEqual(sum(b.get_active() for b in buttons.values()), 1)
+
+        # Turning the selected toggle off must restore it, not recurse.
+        buttons["executed"].set_active(False)
+        self.assertEqual(state["filter"], "executed")
+        self.assertTrue(buttons["executed"].get_active())
+        self.assertEqual(sum(b.get_active() for b in buttons.values()), 1)
+        self.assertFalse(state["refreshing"])
+        self.assertEqual(refresh_calls, ["executed", "executed"])
 
 if __name__ == "__main__":
     unittest.main()
