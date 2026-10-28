@@ -47,13 +47,17 @@ class Broker:
         self.audit = audit
 
     def handle(self, request: ActionRequest) -> Outcome:
-        # Hold the cross-process use lock for the whole decision/execute/
-        # audit cycle.  This makes max_uses a real limit even when the
-        # daemon and a one-shot CLI (or two CLIs) act at the same time.
+        decision = None
         try:
             with self.audit.execution_lock():
                 self._refresh_uses()
-                return self._handle_locked(request)
+                decision = self.policy.evaluate(request, utcnow())
+                if not decision.allowed:
+                    outcome = self._decision_denial(request, decision)
+                    return self._audit_or_failure(request, decision, outcome, None)
+                if not decision.requires_confirmation:
+                    return self._execute_and_audit_locked(
+                        request, decision, None, None)
         except AuditIntegrityError as exc:
             # The use lock or audit ledger could not be trusted.  Fail
             # closed, and still attempt a denial record in the trail.
@@ -61,6 +65,75 @@ class Broker:
                               request.request_id,
                               error=f"{type(exc).__name__}: {exc}")
             return self._audit_or_failure(request, None, outcome, None)
+        except Exception as exc:
+            outcome = Outcome(OutcomeStatus.FAILED, ReasonCode.EXECUTION_ERROR,
+                              request.request_id,
+                              decision.capability_id if decision else None,
+                              error=f"{type(exc).__name__}: {exc}")
+            return self._audit_or_failure(request, decision, outcome, None)
+
+        # Only an allowed request requiring confirmation reaches this point.
+        # Crucially, the cross-process use lock is not held while the user
+        # decides.  Concurrent reads and unrelated actions can proceed.
+        token = self.confirmations.request_approval(
+            tool=request.tool,
+            operation=request.operation.value,
+            target=decision.canonical_path,
+            description=request.description,
+            preview=make_preview(request.content),
+            action_digest=request.action_digest(decision.canonical_path),
+        )
+        confirmation_label = "approved" if token else "denied"
+
+        decision = None
+        try:
+            with self.audit.execution_lock():
+                # Another request may have consumed this capability while the
+                # prompt was open.  Refresh and re-evaluate before execution.
+                self._refresh_uses()
+                decision = self.policy.evaluate(request, utcnow())
+                if not decision.allowed:
+                    outcome = self._decision_denial(request, decision)
+                    return self._audit_or_failure(
+                        request, decision, outcome, confirmation_label)
+
+                # Approval is valid only while the same policy still requires
+                # it and the token remains bound to this exact action.
+                if not decision.requires_confirmation:
+                    outcome = Outcome(
+                        OutcomeStatus.DENIED_POLICY,
+                        ReasonCode.CONFIRMATION_DENIED,
+                        request.request_id,
+                        decision.capability_id,
+                    )
+                    return self._audit_or_failure(
+                        request, decision, outcome, confirmation_label)
+                if token is None or not token.is_valid_for(
+                        request.action_digest(decision.canonical_path), utcnow()):
+                    outcome = Outcome(
+                        OutcomeStatus.DENIED_USER,
+                        ReasonCode.CONFIRMATION_DENIED,
+                        request.request_id,
+                        decision.capability_id,
+                    )
+                    return self._audit_or_failure(
+                        request, decision, outcome, confirmation_label)
+
+                return self._execute_and_audit_locked(
+                    request, decision, token, confirmation_label)
+        except AuditIntegrityError as exc:
+            outcome = Outcome(OutcomeStatus.FAILED, ReasonCode.EXECUTION_ERROR,
+                              request.request_id,
+                              error=f"{type(exc).__name__}: {exc}")
+            return self._audit_or_failure(
+                request, decision, outcome, confirmation_label)
+        except Exception as exc:
+            outcome = Outcome(OutcomeStatus.FAILED, ReasonCode.EXECUTION_ERROR,
+                              request.request_id,
+                              decision.capability_id if decision else None,
+                              error=f"{type(exc).__name__}: {exc}")
+            return self._audit_or_failure(
+                request, decision, outcome, confirmation_label)
 
     def _refresh_uses(self) -> None:
         """Reload durable execution counts while holding the use lock."""
@@ -68,65 +141,32 @@ class Broker:
         for capability in self.policy.capabilities:
             capability.uses = counts.get(capability.capability_id, 0)
 
-    def _handle_locked(self, request: ActionRequest) -> Outcome:
-        now = utcnow()
-        decision = None
-        outcome: Optional[Outcome] = None
-        confirmation_label: Optional[str] = None
-        audit_error: Optional[Exception] = None
+    @staticmethod
+    def _decision_denial(request: ActionRequest, decision) -> Outcome:
+        status = (
+            OutcomeStatus.DENIED_UNSUPPORTED
+            if decision.reason is ReasonCode.UNSUPPORTED_OPERATION
+            else OutcomeStatus.DENIED_POLICY
+        )
+        return Outcome(status, decision.reason, request.request_id,
+                       decision.capability_id)
+
+    def _execute_and_audit_locked(self, request, decision, token,
+                                  confirmation_label) -> Outcome:
         try:
-            decision = self.policy.evaluate(request, now)
-
-            if not decision.allowed:
-                status = (
-                    OutcomeStatus.DENIED_UNSUPPORTED
-                    if decision.reason is ReasonCode.UNSUPPORTED_OPERATION
-                    else OutcomeStatus.DENIED_POLICY
-                )
-                outcome = Outcome(status, decision.reason, request.request_id,
-                                  decision.capability_id)
-            else:
-                capability = self.policy.find(decision.capability_id)
-                token = None
-                if decision.requires_confirmation:
-                    digest = request.action_digest(decision.canonical_path)
-                    token = self.confirmations.request_approval(
-                        tool=request.tool,
-                        operation=request.operation.value,
-                        target=decision.canonical_path,
-                        description=request.description,
-                        preview=make_preview(request.content),
-                        action_digest=digest,
-                    )
-                    confirmation_label = "approved" if token else "denied"
-                    if token is None:
-                        outcome = Outcome(OutcomeStatus.DENIED_USER,
-                                          ReasonCode.CONFIRMATION_DENIED,
-                                          request.request_id, decision.capability_id)
-                if outcome is None:
-                    outcome = executor.execute(
-                        request, capability, decision.canonical_path,
-                        utcnow(), token)
-                    if outcome.status is OutcomeStatus.EXECUTED:
-                        capability.uses += 1
-
-        except Exception as exc:  # fail closed, still audited below
-            outcome = Outcome(OutcomeStatus.FAILED, ReasonCode.EXECUTION_ERROR,
-                              request.request_id,
-                              decision.capability_id if decision else None,
-                              error=f"{type(exc).__name__}: {exc}")
-        finally:
-            # Capture any append failure and replace the outcome
-            # afterwards so an executed-but-unrecorded action can never be
-            # reported as a clean success.
-            try:
-                self._audit(request, decision, outcome, confirmation_label)
-            except Exception as exc:
-                audit_error = exc
-
-        if audit_error is not None:
-            return self._audit_failure(request, outcome, audit_error)
-        return outcome
+            capability = self.policy.find(decision.capability_id)
+            outcome = executor.execute(
+                request, capability, decision.canonical_path, utcnow(), token)
+            if outcome.status is OutcomeStatus.EXECUTED:
+                capability.uses += 1
+        except Exception as exc:
+            outcome = Outcome(
+                OutcomeStatus.FAILED, ReasonCode.EXECUTION_ERROR,
+                request.request_id, decision.capability_id,
+                error=f"{type(exc).__name__}: {exc}",
+            )
+        return self._audit_or_failure(
+            request, decision, outcome, confirmation_label)
 
     def _audit_or_failure(self, request, decision, outcome, confirmation_label) -> Outcome:
         try:
