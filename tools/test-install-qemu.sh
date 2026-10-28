@@ -118,7 +118,8 @@ qemu-system-x86_64 \
     -initrd "$INITRD" \
     -append "auto=true priority=critical console=ttyS0,115200n8 preseed/file=/cdrom/install/preseed.cfg" \
     -drive file="$OUT/disk.qcow2",if=virtio,format=qcow2 \
-    -cdrom "$ISO" \
+    -drive file="$ISO",media=cdrom,readonly=on,if=none,id=cdrom0 \
+    -device ide-cd,drive=cdrom0 \
     -netdev user,id=net0 \
     -device virtio-net-pci,netdev=net0 \
     -display none \
