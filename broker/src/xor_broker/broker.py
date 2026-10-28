@@ -23,8 +23,6 @@ action but before the durable append can undercount ``max_uses``.
 
 from __future__ import annotations
 
-from typing import Optional
-
 from . import executor
 from .audit import AuditIntegrityError, AuditLog
 from .confirm import ConfirmationManager, make_preview
