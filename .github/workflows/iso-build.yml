@@ -198,6 +198,22 @@ jobs:
             echo "ok=true"
           } >> "$GITHUB_OUTPUT"
 
+      - name: Extract the ISO GRUB config for boot diagnostics
+        if: steps.build.outputs.ok == 'true'
+        shell: bash
+        env:
+          ISO_OUTPUT: ${{ steps.build.outputs.iso_path }}
+        run: |
+          set -uo pipefail
+          iso="$PWD/$ISO_OUTPUT"
+          if xorriso -osirrox on -indev "$iso" \
+              -extract /boot/grub/grub.cfg artifacts/grub.cfg 2> artifacts/grub-extract.log; then
+            cat artifacts/grub.cfg
+          else
+            echo "::warning::Could not extract /boot/grub/grub.cfg; see artifacts/grub-extract.log"
+            cat artifacts/grub-extract.log || true
+          fi
+
       - name: Attempt QEMU boot with TCG and capture evidence
         id: qemu
         if: steps.build.outputs.ok == 'true'

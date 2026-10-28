@@ -49,6 +49,26 @@ cleanup() {
 }
 trap cleanup EXIT HUP INT TERM
 
+snapshot() {
+    name=$1
+    [ -S "$MONITOR" ] || return 0
+    snap_ppm="$OUT/$name.ppm"
+    snap_png="$OUT/$name.png"
+    printf 'screendump %s\n' "$snap_ppm" | \
+        timeout 10 socat - UNIX-CONNECT:"$MONITOR" >/dev/null 2>&1 || return 0
+    [ -s "$snap_ppm" ] || return 0
+    if command -v convert >/dev/null 2>&1; then
+        convert "$snap_ppm" "$snap_png" >/dev/null 2>&1 || true
+    fi
+    return 0
+}
+
+press_enter() {
+    [ -S "$MONITOR" ] || return 0
+    printf 'sendkey ret\n' | \
+        timeout 10 socat - UNIX-CONNECT:"$MONITOR" >/dev/null 2>&1 || true
+}
+
 finish() {
     {
         echo "result=$RESULT"
@@ -119,6 +139,16 @@ qemu-system-x86_64 \
     > "$OUT/qemu-stdout.log" 2>&1 &
 QEMU_PID=$!
 echo "$QEMU_PID" > "$OUT/qemu.pid"
+
+# Capture the firmware/GRUB handoff even when Linux never reaches the desktop.
+sleep 15
+snapshot boot-015s
+press_enter
+sleep 30
+snapshot boot-045s
+press_enter
+sleep 60
+snapshot boot-105s
 
 for _ in $(seq 1 $((TIMEOUT / 10))); do
     if [ -f "$SERIAL" ] && grep -Eqi \
