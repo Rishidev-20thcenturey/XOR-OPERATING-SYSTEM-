@@ -129,8 +129,8 @@ for _ in $(seq 1 $((TIMEOUT / 10))); do
         break
     fi
     if ! kill -0 "$QEMU_PID" 2>/dev/null; then
-        wait "$QEMU_PID"
-        QEMU_RC=$?
+        QEMU_RC=0
+        wait "$QEMU_PID" || QEMU_RC=$?
         break
     fi
     sleep 10
@@ -183,6 +183,5 @@ if kill -0 "$QEMU_PID" 2>/dev/null; then
     sleep 5
     kill "$QEMU_PID" 2>/dev/null || true
 fi
-wait "$QEMU_PID" 2>/dev/null
-QEMU_RC=$?
+wait "$QEMU_PID" 2>/dev/null || true
 finish
