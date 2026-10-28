@@ -215,7 +215,7 @@ example manifest valid, corpus regenerates byte-identically, 3 XFCE XML
 files well-formed, 7 `.desktop` entries and Aurora commands sane,
 live-build tree and Aurora install wiring complete, package list uses the
 corrected Debian names, QEMU device identifiers and install-hook demo
-wrappers correct, 11 shell scripts parse and **ShellCheck 0.11.0 is
+wrappers correct, 13 shell scripts parse and **ShellCheck 0.11.0 is
 clean**, legacy PNG 1920×1080, CSS classes/braces, SVG logo, Royal Aurora
 JPEG and XFCE default agree, and headless XOR Shell/Control Centre
 commands run. The corpus’s unsupported-operation payload marker was made

@@ -29,7 +29,7 @@ lb config noauto \
     --bootloaders "syslinux,grub-efi" \
     --debian-installer live \
     --debian-installer-gui true \
-    --bootappend-live "boot=live components hostname=XOR username=user" \
+    --bootappend-live "boot=live components hostname=XOR username=user console=ttyS0,115200" \
     --bootappend-install "auto=true priority=critical console=ttyS0,115200n8 preseed/file=/cdrom/install/preseed.cfg" \
     --iso-application "XOR OS" \
     --iso-publisher "XOR OS project" \
