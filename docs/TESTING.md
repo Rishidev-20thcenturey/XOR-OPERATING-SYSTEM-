@@ -35,9 +35,11 @@ python3 tools/check-packages.py
 
 This catches nonexistent/case-wrong names and missing dependency names
 before a long image build. It is a name-level closure check; apt/lb
-remains authoritative for versions, conflicts and architecture. The
-GitHub Actions ISO build has run successfully and checksum-verified the
-result, while the QEMU boot remains a bounded, inconclusive cloud check.
+remains authoritative for versions, conflicts and architecture. The final
+GitHub Actions ISO run (40597398794) built and checksum-verified the ISO and
+passed the bounded QEMU/TCG live-session gate with a visible Aurora
+screenshot. The QEMU job boots the extracted kernel/initrd directly, so it
+is not a firmware/bootloader test.
 
 ## The 200-scenario corpus
 
@@ -76,16 +78,17 @@ expectation is corrected with a written justification.
 
 ## Not covered yet
 
-* GTK windows (need a display): `confirm_gtk.py`, `xor_activity.py` GTK
-  mode, XOR Shell and Control Centre are compile-checked and their
-  non-GTK cores/headless CLIs are tested; on-desktop verification
-  (Esc denies, Deny focused, launcher search/focus, Wnck window buttons,
-  Ctrl+1–4 activity filters) is a Milestone-2 checklist item —
-  `xor-activity --text`, `xor-shell --status-json` and
-  `xor-control-center --text` *are* exercised.
-* ISO boot in QEMU: the first cloud build/boot attempt returned
-  `INCONCLUSIVE`; keep the bounded serial/TCG smoke test and record a
-  future pass in `docs/TEST_RESULTS.md`.
+* GTK interaction beyond the captured desktop: `confirm_gtk.py`,
+  `xor_activity.py` GTK mode, XOR Shell and Control Centre are
+  compile-checked and their non-GTK cores/headless CLIs are tested; the
+  final ISO screenshot proves the Aurora panel/dock and wallpaper render,
+  but on-desktop interaction (Esc denies, Deny focused, launcher
+  search/focus, Wnck window buttons, Ctrl+1–4 activity filters) is still a
+  Milestone-2 checklist item — `xor-activity --text`,
+  `xor-shell --status-json` and `xor-control-center --text` *are* exercised.
+* Firmware/bootloader boot: the final cloud gate extracts the kernel/initrd
+  and attaches the ISO as a CD-ROM. Boot the ISO through UEFI/OVMF and BIOS
+  on a team machine before claiming the full bootloader path.
 * Fuzzing the manifest/wire parsers, sustained concurrency/load (the
   audit log and `max_uses` have two-writer/concurrent-process tests, but
   the daemon remains single-threaded and has no rate limiting), and

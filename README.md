@@ -44,11 +44,13 @@ then put our originality where it matters:
 > directory, a shell or the network.
 
 This repository contains a **tested broker and OS foundation plus the
-Aurora Shell preview**. The ISO now builds successfully in GitHub
-Actions (`.github/workflows/iso-build.yml`), but the bounded QEMU/TCG
-boot check returned **INCONCLUSIVE** there; the workflow therefore failed
-its final gate. No bootloader/GUI boot was claimed. That honesty is
-recorded in [`docs/TEST_RESULTS.md`](docs/TEST_RESULTS.md).
+Aurora Shell preview**. The ISO builds successfully in GitHub Actions
+(`.github/workflows/iso-build.yml`), and the bounded QEMU/TCG boot reaches
+the live XFCE session with the Aurora panel/dock and Royal Aurora wallpaper
+visually confirmed in the captured screenshot. The QEMU check boots the
+extracted kernel/initrd directly, so firmware/bootloader selection and full
+interactive GTK QA are still not claimed. The exact evidence and remaining
+limits are recorded in [`docs/TEST_RESULTS.md`](docs/TEST_RESULTS.md).
 
 ## 🌌 Aurora — the XOR desktop
 
@@ -135,9 +137,11 @@ remaining limits and test evidence.
 **Limits unchanged:** execution and audit append are not crash-atomic;
 pinned-write rollback protects against reported errors, not a crash in the
 middle of an in-place update. An append failure is reported but cannot undo
-an action. The broker is not system-wide confinement, and the ISO build/QEMU
-boot verification was not accepted in the 2026-10-27 cloud run
-(`INCONCLUSIVE`, final gate failed).
+an action. The broker is not system-wide confinement. The 2026-10-27 cloud
+run (40597398794) passed the ISO build and the QEMU live-session gate with a
+visible Aurora desktop; the QEMU check boots the extracted kernel/initrd
+directly, so firmware/bootloader selection and full interactive GTK QA
+remain unverified.
 
 The boundary mediates requests **through the broker API**. It is not
 yet system-wide syscall confinement. The complete honest model is in
@@ -160,7 +164,7 @@ traversal denied; a write pause for approval; a network send refused;
 and the tamper-evident audit trail tying it together.
 
 ```sh
-tools/test.sh       # 94 tests + 200-scenario security corpus
+tools/test.sh       # 95 tests + 200-scenario security corpus
 tools/validate.sh   # code, assets, docs inputs and live-build wiring
 ```
 
@@ -215,8 +219,8 @@ build outputs.
 
 Latest verified results (2026-10-27, Termux/Android, Python 3.13.13):
 
-* **94 unit tests passed** under unittest: 80 broker (including
-  corpus-as-test), 3 assistant-gate and 11 desktop/Activity/Aurora.
+* **95 unit tests passed** under unittest: 80 broker (including
+  corpus-as-test), 3 assistant-gate and 12 desktop/Activity/Aurora.
   Write regressions prove a replaced pinned file keeps its contents,
   deleted pinned targets are not recreated, failed/zero-progress writes
   preserve the original (atomic staging for unpinned writes, rollback for
@@ -234,22 +238,27 @@ Latest verified results (2026-10-27, Termux/Android, Python 3.13.13):
   security indices: 40 requested packages, 69,222 package names, and
   dependency names resolve. A negative control with `Thunar-volman`
   failed with a lowercase-name suggestion.
-* Static validation passes across 35 Python files, CSS/logo/wallpapers,
+* Static validation passes across 36 Python files, CSS/logo/wallpapers,
   desktop entries, shell scripts and live-build wiring. ShellCheck
-  0.11.0 is clean; pyflakes was not installed and is reported as
-  skipped (no pyflakes-clean claim).
-* **ISO build passed** in GitHub Actions run 40542700041; the ISO was
-  checksummed and the build artifacts were uploaded. **The QEMU boot
-  check was `INCONCLUSIVE`** and the final workflow gate failed. **GTK
-  behaviour was NOT RUN.** The detailed rows are in
-  [`docs/TEST_RESULTS.md`](docs/TEST_RESULTS.md).
+  0.11.0 and pyflakes are clean.
+* **ISO build and QEMU live-session gate passed** in GitHub Actions run
+  [40597398794](https://github.com/Rishidev-20thcenturey/XOR-OPERATING-SYSTEM-/actions/runs/40597398794)
+  at commit `26e87fdddc8016ece8cadb0d24d1d971d1ba9eb3`. The ISO is
+  1,464,860,672 bytes (1.364 GiB), SHA-256
+  `2fb52d345a9209fae87a32965f32d64e5fcb75ce2ad207dd895d79034ed80603`.
+  QEMU recorded `Started lightdm.service` and produced a 1280×800,
+  793,977-byte screenshot showing the Aurora panel/dock and Royal Aurora
+  wallpaper. The QEMU check extracts the kernel/initrd and attaches the ISO
+  as a CD-ROM, so it does **not** exercise firmware/bootloader selection;
+  interactive GTK QA is still a Milestone-2 checklist item. Detailed rows
+  are in [`docs/TEST_RESULTS.md`](docs/TEST_RESULTS.md).
 
 ## 🗺️ Road to the complete XOR OS
 
 | Phase | Status | Destination |
 |---|---|---|
 | Foundation + broker | ✅ Test-proven | Default-deny, auditable core |
-| ISO proof | 🧪 Build PASS; QEMU inconclusive | Retry the bounded QEMU live-session signal, then boot evidence |
+| ISO proof | ✅ Build + QEMU live-session PASS; firmware/GTK QA pending | Bootloader/firmware path and interactive desktop QA |
 | Aurora Shell | 🧪 Preview implemented | Daily-use panel, dock, launcher, controls |
 | Product system | 📝 Planned | Installer, first-run, grants UI, curated apps |
 | A/B updates | 📝 Designed | Signed, verified, rollback-tested updates |

@@ -1,25 +1,25 @@
-# Test results — actual, from available sandboxes and GitHub Actions (2026-10-25 to 2026-10-27)
+# Test results — actual, from available sandboxes and GitHub Actions (2026-10-25 to 2026-10-28)
 
 Original baseline environment: Debian 12 sandbox, Python 3.11.2,
 2 vCPU / 3.8 GiB, **no QEMU, no /dev/kvm, no live-build, no Debian
 mirror access, no GTK/PyGObject** (egress limited to github/pypi/npm).
-The 2026-10-27 hardening pass was re-run on Termux/Android with Python
+The 2026-10-27/28 hardening pass was re-run on Termux/Android with Python
 3.13.13 under the same unprivileged, headless constraints, because the
-Debian sandbox was unavailable. The final run in this document is from
-**2026-10-27 21:37 +0530** on that environment. Debian package indices
-were reachable for the name/dependency preflight; an actual Debian
-`lb build` still could not run (no live-build/root Debian host).
-Everything verifiable in each environment was run; what could not run is
-listed as NOT RUN with the exact blocker. Reproduce locally with
-`tools/test.sh`. The latest ISO-build/QEMU evidence is from GitHub
-Actions run 40542700041, described in the ISO-build/QEMU section below.
+Debian sandbox was unavailable. Debian package indices were reachable for
+the name/dependency preflight; an actual Debian `lb build` ran in the
+GitHub Actions Debian trixie container, not on Termux. Everything
+verifiable in each environment was run; what could not run is listed as
+NOT RUN with the exact blocker. Reproduce locally with `tools/test.sh`.
+The latest ISO-build/QEMU evidence is from GitHub Actions run
+[40597398794](https://github.com/Rishidev-20thcenturey/XOR-OPERATING-SYSTEM-/actions/runs/40597398794),
+described in the ISO-build/QEMU section below.
 
-## Unit tests — PASS (94 tests)
+## Unit tests — PASS (95 tests)
 
-Latest `tools/test.sh` run (unittest fallback) → **94 passed**:
+Latest `tools/test.sh` run (unittest fallback) → **95 passed**:
 80 broker tests (including corpus-as-test), 3 assistant-gate tests and
-11 desktop tests. Exact durations from the final run: 80 tests in
-2.422 s, 3 tests in 0.000 s, 11 tests in 0.031 s. Covers: default-deny
+12 desktop tests. Exact durations from the final run: 80 tests in
+3.338 s, 3 tests in 0.003 s, 12 tests in 0.040 s. Covers: default-deny
 matrix, exact file/dir scoping, traversal & symlink fail-closed (incl.
 write-through leaving target untouched), selected-directory grants
 issuing `dir` scope and actually listing, replacement of a selected
@@ -56,7 +56,8 @@ assistant disabled + read-only surface, activity filters/search/chain
 parsing/search/grouping, launch argv field-code stripping, config
 sanitising/round-trip and malformed-config fallback, battery/network/
 GiB memory parsing, wallpaper catalog, panel-opacity CSS generation,
-Control Centre text status).
+Control Centre text status, and connector-named XFCE 4.20 backdrop
+application with an `xfdesktop --reload`).
 
 Failures found during development were fixed in **product code**:
 symlinked-dir `ENOTDIR` maps to fail-closed `PathEscapeError`, and the
@@ -156,6 +157,27 @@ broker therefore prefers the orphan. A microscopic residual
 remains if parent permissions change between the safety check and `rmdir`,
 and same-UID processes remain outside the cross-user boundary.
 
+The final live-session pass fixed XFCE 4.20 backdrop ownership. XFCE 4.20
+keys backdrops by connector name (in QEMU: `monitorVirtual-1`), not by the
+older `monitor0`/`monitor1` indexes, so the skel defaults were ignored and
+the desktop showed Debian’s default wallpaper. The shell now discovers
+connected connectors with `xrandr`, writes both the legacy and
+connector-named single-image/workspace keys, sets `image-show` and
+`image-style`, marks the skel backdrop as already migrated, and asks the
+running xfdesktop to reload. The shell’s own startup applies this after
+XFCE’s first-login migration. The QEMU job now waits 240 seconds after the
+graphical signal, retries a blank framebuffer dump, and fails its final gate
+unless a non-blank screenshot was captured. The final screenshot is real:
+1280×800, 793,977 bytes, showing the Aurora panel/dock and Royal Aurora
+wallpaper. No security expectation was changed.
+
+Earlier live-session runs were used to isolate the failures and are not the
+latest evidence: 40542700041 was `INCONCLUSIVE`; 40585123362 reached the
+graphical target but showed Debian’s default wallpaper; 40588316194 passed
+the serial gate but captured a 282-byte black screenshot; 40590709471
+confirmed the desktop after a longer wait; and 40597398794 is the accepted
+final run.
+
 ## Security corpus — PASS (all 10 criteria)
 
 `python3 security/run_corpus.py` (200 scenarios + 50 injection twins;
@@ -176,21 +198,17 @@ final run `OVERALL: PASS`):
 
 ## Static validation — PASS
 
-`tools/validate.py`: 35 Python files compile, example manifest valid,
-corpus regenerates byte-identically, 3 XFCE XML files well-formed,
-7 `.desktop` entries and Aurora commands sane, live-build tree and
-Aurora install wiring complete, package list uses the corrected Debian
-names, QEMU device identifiers and install-hook demo wrappers correct,
-11 shell scripts parse and **ShellCheck 0.11.0 is clean**, legacy PNG
-1920×1080, CSS classes/braces, SVG logo, Royal Aurora JPEG and XFCE
-default agree, and headless XOR Shell/Control Centre commands run. The
-corpus's unsupported-operation payload marker was made path-independent
-so the content-redaction check cannot false-positive on a sandbox path
-containing the old generic string `data`. Pyflakes was **not installed**
-in the final Termux run, so `tools/validate.py` reported it as
-`SKIPPED`; no pyflakes-clean claim is made. Earlier Debian/pytest-venv
-runs and GitHub Actions PR #2 (Python 3.11, Python 3.12 and ShellCheck
-jobs) were green historically, but were not re-run here.
+`tools/validate.py`: 36 Python files compile, **pyflakes is clean**,
+example manifest valid, corpus regenerates byte-identically, 3 XFCE XML
+files well-formed, 7 `.desktop` entries and Aurora commands sane,
+live-build tree and Aurora install wiring complete, package list uses the
+corrected Debian names, QEMU device identifiers and install-hook demo
+wrappers correct, 11 shell scripts parse and **ShellCheck 0.11.0 is
+clean**, legacy PNG 1920×1080, CSS classes/braces, SVG logo, Royal Aurora
+JPEG and XFCE default agree, and headless XOR Shell/Control Centre
+commands run. The corpus’s unsupported-operation payload marker was made
+path-independent so the content-redaction check cannot false-positive on a
+sandbox path containing the old generic string `data`.
 
 ## Debian package list and build-script checks — PASS (no local ISO build)
 
@@ -215,56 +233,79 @@ and success-with-no-new-ISO exits failure. The stale ISO is preserved in
 all cases; nothing is silently deleted.
 
 An actual `lb build` was **not** run in the Termux sandbox, so the fake-lb
-claim is limited to script control flow. The GitHub Actions ISO build in run
-40542700041 did run the real Debian Live Build and succeeded.
+claim is limited to script control flow. The final GitHub Actions ISO build
+in run 40597398794 did run the real Debian Live Build and succeeded.
 
-## GitHub Actions ISO build and QEMU smoke test — 2026-10-27 (run 40542700041)
+## GitHub Actions ISO build and QEMU live-session gate — 2026-10-27 (run 40597398794)
 
-Commit under test: `d30c7a6045ef00437dbbef4fbad6145f6ad5bb0a` on
+Commit under test: `26e87fdddc8016ece8cadb0d24d1d971d1ba9eb3` on
 `review/ac48e68-hardening`.
 
 Workflow: `.github/workflows/iso-build.yml`, job
 `Build ISO and attempt QEMU boot`, run
-[40542700041](https://github.com/Rishidev-20thcenturey/XOR-OPERATING-SYSTEM-/actions/runs/40542700041).
+[40597398794](https://github.com/Rishidev-20thcenturey/XOR-OPERATING-SYSTEM-/actions/runs/40597398794).
+The run was created `2026-10-27T22:46:57Z`, completed
+`2026-10-27T23:03:32Z` (16m32s) with conclusion **`success`**. The final
+gate passed because the build succeeded, QEMU returned `PASS`, and a
+non-blank screenshot was captured.
 
-The job ran on `ubuntu-latest` and completed with conclusion `failure`.
-The ISO build itself succeeded; the final gate failed because the QEMU
-boot check returned **`INCONCLUSIVE`**, not `PASS`.
-
-Runner disk state: 86 GiB available before the job. The workflow’s 20 GiB
-reclaim threshold was not reached, so no preinstalled toolchain was
-removed.
-
-Build stage:
-* Started `2026-10-27T16:37:58Z`, completed `2026-10-27T16:47:01Z`
-  (about 9m03).
+Runner/build stage:
+* Build finished `2026-10-27T22:56:19Z`.
 * Debian Live Build `20250505+deb13u1` built
-  `live-image-amd64.hybrid.iso`.
+  `live-image-amd64.hybrid.iso`; the log ends
+  `P: Build completed successfully`.
 * ISO size: 1,464,860,672 bytes (1.364 GiB).
-* ISO SHA-256: `34a44ba9fbc7bb692f6ea998740639f7651463b1327ba36cd8726ce20f837a83`.
-* Build checksum verification: `live-image-amd64.hybrid.iso: OK`.
-* Build log, checksum and `BUILD-MANIFEST.txt` were uploaded as artifact
-  `xor-build-evidence-40542700041`.
+* ISO SHA-256: `2fb52d345a9209fae87a32965f32d64e5fcb75ce2ad207dd895d79034ed80603`.
+* `BUILD-MANIFEST.txt` SHA-256:
+  `5d5ae9f95c766969a1f6f175c3ddb0c1bdd5fdc6f4911bfd40139236967634ac`.
+* Package-list SHA-256:
+  `e1925634ada56b085d2df26e8c45f436358867de11e9598549a2da56b2a1741f`.
+* Disk after build: `/dev/root ext4 145G total, 67G used, 78G available
+  (47%)`.
+* The manifest records `git_revision 26e87fdddc8016ece8cadb0d24d1d971d1ba9eb3
+  (uncommitted changes: 39 files)`. The local repository worktree was clean
+  after the push (`git status --short` empty); this report records the
+  manifest’s dirty-state count as an open reproducibility caveat rather than
+  attributing it to a named source change.
+* Build evidence artifact `xor-build-evidence-40597398794` is 247,447
+  bytes and contains `lb-build.log`, `build-summary.txt`, the checksum and
+  the manifest.
 
 QEMU stage:
-* Started `2026-10-27T16:47:07Z`, completed `2026-10-27T17:17:15Z`
-  (about 30m08). The signal wait is a bounded 30-minute loop.
-* Final workflow result: `INCONCLUSIVE`; the final gate failed with
-  “`QEMU result was 'INCONCLUSIVE', not PASS`”.
-* The checked signal set included
-  `Reached target Graphical Interface`, `Started LightDM` and
-  `Started lightdm.service`. No accepted reliable boot-to-live-session
-  signal was produced within the bounded wait.
-* QEMU/TCG and evidence-handling tools: QEMU 8.2.2, xorriso 1.5.6.
-* The final QEMU result was not accepted, so no GUI/screenshot claim was
-  made and the final gate failed rather than passing an inconclusive
-  check.
+* QEMU/TCG boot of the extracted Debian kernel/initrd
+  (`6.12.113+deb13-amd64`) with the ISO attached as a CD-ROM. The virtual
+  target is q35, 2 vCPU, 4 GiB RAM, virtio-vga and serial logging; KVM was
+  unavailable, so this is TCG. The workflow’s direct-kernel path is not a
+  firmware/bootloader test.
+* Result file: `result=PASS`, `graphical_signal=1`, `linux_signal=0`,
+  `qemu_exit=0`, `screenshot_ok=1`.
+* Accepted serial signal:
+  `[   85.036916] systemd[1]: Started lightdm.service - Light Display Manager.`
+  LightDM autologin then started `xfce4-session`; the pinned desktop
+  screenshot was captured after the longer post-signal wait and retry
+  logic.
+* Screenshot: PNG 1280×800, 8-bit sRGB, **793,977 bytes**. Visual
+  inspection shows the XOR Aurora top panel (launcher, workspaces, clock,
+  network/power pills, Control Centre, power), the floating dock, and the
+  **Royal Aurora / XOR wallpaper**. XFCE remains visible as the fallback
+  layer by design.
+* The final gate fails if QEMU is not exactly `PASS` or the screenshot is
+  blank/too small. The screenshot artifact is real visual evidence, not a
+  serial-only claim.
+* QEMU evidence artifact `xor-qemu-evidence-40597398794` is 1,604,004,923
+  bytes and contains `serial.log`, `screenshot.png`, `qemu-result.txt`,
+  `boot-inputs.txt`, `filesystem.packages`, `screendump.log` and the
+  extraction log. The ISO artifact `xor-iso-image-40597398794` is
+  1,455,998,922 bytes.
 
-Artifacts from the failed-but-evidence-collecting run:
-* `xor-build-evidence-40542700041` (248,303 bytes)
-* `xor-iso-image-40542700041` (1,455,997,053 bytes; actual ISO was
-  1,464,860,672 bytes)
-* `xor-qemu-evidence-40542700041` (1,602,011,892 bytes)
+Not verified in this run:
+* Firmware/UEFI/BIOS bootloader selection (the kernel/initrd were extracted
+  and booted directly; the ISO was attached as a CD-ROM).
+* Interactive GTK QA beyond the captured desktop: launcher focus/search,
+  Wnck window buttons, Control Centre actions, broker GTK confirmation
+  dialogs and Ctrl+1–4 Activity filters still require a human test on a
+  booted machine.
+* KVM acceleration and broad hardware. This is a bounded TCG smoke test.
 
 ## Demo executions — PASS
 
@@ -282,12 +323,14 @@ Artifacts from the failed-but-evidence-collecting run:
 
 | Item | Blocker (verbatim) | Run instead |
 |---|---|---|
-| ISO build | Now run successfully in GitHub Actions run 40542700041; see the new ISO-build/QEMU section above for build, checksum and artifact evidence. | Local `sudo tools/build-iso.sh` remains available for a team-machine rebuild. |
-| QEMU boot | No reliable boot-to-live-session signal was accepted in GitHub Actions run 40542700041; result `INCONCLUSIVE`, final gate failed. | Keep the bounded serial/TCG smoke test, inspect the captured QEMU evidence, and retry the live-session gate. |
-| GTK UI behaviour | No display / no PyGObject | After first ISO boot: verify Aurora panel/dock/launcher/Command Centre/Control Centre, Wnck window buttons and workspaces; run `xor-demo-writer`, verify Deny-focused dialog, Esc denies, 120 s timeout; open XOR Activity, check Ctrl+1–4 / Ctrl+F / Esc. Code is compile-checked; non-GTK cores and text/status modes are tested. |
+| ISO build | Passed in GitHub Actions run 40597398794; see the ISO-build/QEMU section above for exact checksum and artifact evidence. | Local `sudo tools/build-iso.sh` remains available for a team-machine rebuild. |
+| Firmware/bootloader boot | The accepted QEMU gate extracts the kernel/initrd and attaches the ISO as a CD-ROM; it does not select a BIOS/UEFI bootloader. | Boot the ISO through firmware (UEFI/OVMF and BIOS) on a team machine and confirm the live session. |
+| GTK interaction | The final screenshot shows the Aurora desktop on the live ISO, but there is still no unattended interactive test for launcher focus/search, Wnck window buttons, Control Centre actions, broker GTK confirmation or Activity filters. | On the booted ISO: verify the Aurora panel/dock/launcher/Command Centre/Control Centre; run `xor-demo-writer`, verify the Deny-focused dialog, Esc denies and the 120 s timeout; open XOR Activity and check Ctrl+1–4 / Ctrl+F / Esc. Non-GTK cores and headless text/status modes are tested. |
 
-Consequence, stated plainly: the ISO now builds and is checksummed and
-artifact-backed, but the **QEMU boot-to-live-session gate was not passed**
-in the 2026-10-27 cloud run; Aurora remains a tested-core preview rather
-than a daily-used shell. The first team-machine task is to retry the QEMU
-live-session signal and then exercise Aurora + GTK confirmation.
+Consequence, stated plainly: the ISO builds, is checksummed and
+artifact-backed, and the bounded QEMU/TCG direct-kernel boot now reaches a
+live XFCE session with the Aurora shell and Royal Aurora wallpaper visibly
+confirmed. That is a real live-session pass, not a daily-use claim:
+firmware/bootloader selection, interactive GTK QA and broad hardware
+verification remain open. The first team-machine task is to boot the ISO
+through firmware and exercise Aurora and broker confirmations interactively.
