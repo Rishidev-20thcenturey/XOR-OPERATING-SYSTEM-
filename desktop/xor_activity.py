@@ -37,7 +37,7 @@ def run_gtk(audit_path) -> int:  # pragma: no cover - needs a display
     gi.require_version("Gtk", "3.0")
     from gi.repository import Gdk, Gtk
 
-    state = {"filter": "all", "query": ""}
+    state = {"filter": "all", "query": "", "refreshing": False}
 
     window = Gtk.Window(title="XOR Activity — broker audit log")
     window.set_default_size(980, 560)
@@ -87,13 +87,25 @@ def run_gtk(audit_path) -> int:  # pragma: no cover - needs a display
             store.append([r["seq"], r["timestamp"].replace("T", " ")[:19], r["tool"],
                           r["operation"], r["decision"], str(r["confirmation"]),
                           r["result"], r["reason"], r["resource"]])
-        for name, btn in buttons.items():
-            btn.set_active(name == state["filter"])
+        # set_active() emits "toggled".  Suppress those callbacks
+        # while refreshing the radio-like toggle-button group.
+        state["refreshing"] = True
+        try:
+            for name, btn in buttons.items():
+                btn.set_active(name == state["filter"])
+        finally:
+            state["refreshing"] = False
         status.set_text(f"{len(shown)}/{len(records)} records · "
                         f"hash chain: {'VALID' if ok else 'BROKEN'} ({n} verified)")
 
     def set_filter(name):
-        def handler(_btn):
+        def handler(btn):
+            if state["refreshing"]:
+                return
+            # Keep one filter selected if the active toggle is clicked off.
+            if not btn.get_active():
+                refresh()
+                return
             state["filter"] = name
             refresh()
         return handler
