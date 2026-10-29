@@ -1,0 +1,181 @@
+name: UEFI login diagnostic (manual)
+
+# Temporary diagnostic: boot an existing ISO through OVMF, log in on ttyS0,
+# and dump LightDM's log to the serial console.  Not part of the release gate.
+on:
+  push:
+    branches:
+      - 'feat/sandboxed-app-launch-prototype'
+    paths:
+      - '.github/workflows/uefi-login-debug.yml'
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: GitHub Actions run that produced the ISO artifact
+        required: true
+        default: "40809903519"
+      iso_artifact:
+        description: ISO artifact name
+        required: true
+        default: xor-iso-image-40809903519
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  diagnose:
+    name: Boot ISO through OVMF and read guest logs
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      DEBIAN_FRONTEND: noninteractive
+      GH_TOKEN: ${{ github.token }}
+      RUN_ID: ${{ inputs.run_id || '40809903519' }}
+      ISO_ARTIFACT: ${{ inputs.iso_artifact || 'xor-iso-image-40809903519' }}
+
+    steps:
+      - name: Install QEMU, OVMF and serial tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            qemu-system-x86 ovmf socat imagemagick
+
+      - name: Download the ISO under test
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/iso
+          gh run download "$RUN_ID" \
+            --repo "$GITHUB_REPOSITORY" \
+            --name "$ISO_ARTIFACT" \
+            --dir artifacts/iso
+          find artifacts/iso -maxdepth 2 -type f -printf '%p %s bytes\n'
+
+      - name: Boot OVMF and dump LightDM logs over serial
+        shell: bash
+        run: |
+          set -uo pipefail
+          mkdir -p evidence
+          ISO=$(find artifacts/iso -type f -name '*.iso' -size +100M | head -n1)
+          test -n "$ISO" || { echo "ERROR: ISO not found" >&2; exit 1; }
+          ISO=$(cd "$(dirname "$ISO")" && pwd)/$(basename "$ISO")
+          SERIAL="$PWD/evidence/serial.log"
+          MONITOR="$PWD/evidence/monitor.sock"
+          VARS="$PWD/evidence/OVMF_VARS.fd"
+          cp /usr/share/OVMF/OVMF_VARS_4M.fd "$VARS"
+
+          sendkey() {
+            [ -S "$MONITOR" ] || return 0
+            printf 'sendkey %s\n' "$1" |
+              timeout 5 socat - UNIX-CONNECT:"$MONITOR" >/dev/null 2>&1 || true
+            sleep 0.15
+          }
+
+          type_text() {
+            text=$1
+            i=0
+            while [ "$i" -lt "${#text}" ]; do
+              ch=$(printf '%s' "$text" | cut -c$((i + 1)))
+              case "$ch" in
+                ' ') key=spc ;;
+                '/') key=slash ;;
+                '.') key=dot ;;
+                '-') key=minus ;;
+                '_') key=shift-minus ;;
+                ':') key=shift-semicolon ;;
+                [a-z0-9]) key=$ch ;;
+                [A-Z]) key="shift-$(printf '%s' "$ch" | tr 'A-Z' 'a-z')" ;;
+                *) echo "WARNING: unsupported character: $ch" >&2; key= ;;
+              esac
+              [ -n "$key" ] && sendkey "$key"
+              i=$((i + 1))
+            done
+          }
+
+          qemu-system-x86_64 \
+            -machine q35,accel=tcg \
+            -cpu qemu64 \
+            -m 4096 -smp 2 \
+            -drive if=pflash,format=raw,readonly=on,file=/usr/share/OVMF/OVMF_CODE_4M.fd \
+            -drive if=pflash,format=raw,file="$VARS" \
+            -drive file="$ISO",media=cdrom,readonly=on,if=none,id=cdrom0 \
+            -device ide-cd,drive=cdrom0 \
+            -display none \
+            -vga none \
+            -device virtio-vga \
+            -device virtio-net-pci,netdev=net0 \
+            -netdev user,id=net0 \
+            -vnc 127.0.0.1:2 \
+            -serial "file:$SERIAL" \
+            -monitor "unix:$MONITOR,server,nowait" \
+            -boot order=d \
+            -no-reboot \
+            > evidence/qemu-stdout.log 2>&1 &
+          QEMU_PID=$!
+          echo "qemu_pid=$QEMU_PID"
+
+          READY=0
+          for i in $(seq 1 120); do
+            sleep 2
+            if [ $((i % 5)) -eq 0 ]; then
+              sendkey ret
+            fi
+            if [ -f "$SERIAL" ] && grep -aq 'XOR login:' "$SERIAL"; then
+              READY=1
+              break
+            fi
+            if ! kill -0 "$QEMU_PID" 2>/dev/null; then
+              break
+            fi
+          done
+          echo "serial_login_prompt=$READY" | tee evidence/summary.txt
+
+          if [ "$READY" = 1 ]; then
+            sleep 5
+            type_text user
+            sendkey ret
+            sleep 3
+            type_text live
+            sendkey ret
+            sleep 8
+
+            type_text "sudo systemctl status lightdm --no-pager"
+            sendkey ret
+            sleep 4
+            type_text live
+            sendkey ret
+            sleep 12
+
+            type_text "sudo cat /var/log/lightdm/lightdm.log"
+            sendkey ret
+            sleep 4
+            type_text live
+            sendkey ret
+            sleep 12
+
+            type_text "sudo journalctl -u lightdm --no-pager"
+            sendkey ret
+            sleep 4
+            type_text live
+            sendkey ret
+            sleep 15
+          fi
+
+          if kill -0 "$QEMU_PID" 2>/dev/null; then
+            printf 'quit\n' | timeout 5 socat - UNIX-CONNECT:"$MONITOR" >/dev/null 2>&1 || true
+            sleep 3
+            kill "$QEMU_PID" 2>/dev/null || true
+          fi
+          wait "$QEMU_PID" 2>/dev/null || true
+
+      - name: Upload serial evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: xor-uefi-login-debug-${{ github.run_id }}
+          path: evidence/**
+          if-no-files-found: warn
+          retention-days: 7
