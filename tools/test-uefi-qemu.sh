@@ -128,7 +128,8 @@ qemu-system-x86_64 \
     -drive file="$ISO",media=cdrom,readonly=on,if=none,id=cdrom0 \
     -device ide-cd,drive=cdrom0 \
     -display none \
-    -vga std \
+    -vga none \
+    -device virtio-vga \
     -device virtio-net-pci,netdev=net0 \
     -netdev user,id=net0 \
     -vnc 127.0.0.1:2 \
