@@ -180,7 +180,9 @@ for _ in $(seq 1 $((TIMEOUT / 10))); do
             SIGNAL=$(grep -Ei 'Reached target Graphical Interface|Started LightDM|Started lightdm\.service' "$SERIAL" | tail -n1)
             break
         fi
-        if grep -Eqi 'Starting lightdm\.service|lightdm\.service - Light Display Manager' "$SERIAL"; then
+        # Match the word, not the full line: systemd inserts ANSI escapes
+        # between the message and the unit name on the serial console.
+        if grep -Eqi 'lightdm' "$SERIAL"; then
             DISPLAY_START=1
         fi
     fi
