@@ -14,6 +14,7 @@ tools/validate.sh    # static checks: compile, pyflakes, XML/JSON/shell...
 |---|---|---|
 | Policy/paths unit tests | `broker/tests/test_policy_and_paths.py` | default-deny matrix, scope exactness, traversal/symlink fail-closed, expiry/exhaustion, untrusted-text irrelevance |
 | Broker end-to-end | `broker/tests/test_broker_e2e.py` | confirmation binding/staleness/replay, deny-by-default CLI, audit completeness + redaction + tamper detection, FD-anchored chain verification for `max_uses`, rejection of malformed/hash-invalid records and replaced/deleted/truncated logs, explicit `audit_failure` on append failure, two-writer locking, fail-closed startup verification, durable `max_uses` across a rebuild and across concurrent threads/processes/daemon+CLI sharing one audit log, selected-directory listing plus replacement-pin rejection, pinned-write replacement/deletion safety, write-failure rollback (existing content preserved, no temp-file litter), private `0700` staging (file created `0600`, destination mode applied inside it), staging-path substitution and source-symlink rejection, setup-failure identity-checked cleanup with substituted-entry preservation and unsafe-parent orphan preference, zero-progress/oversized `write()` results failing instead of looping, mode-bit preservation, symlink-target rejection, private manifest creation, symlinked/non-regular manifest refusal in both `init` and normal loading, daemon singleton locking, manifest rejection, real Unix-socket round-trip |
+| Tokens, sandbox argv, grant editing | `broker/tests/test_tokens_sandbox.py` | private `0700` token store with `0600` files and rotation/revocation, path traversal rejection, missing/wrong/non-string token denial, unregistered-tool denial, revocation during confirmation blocking the write, malformed wire request audit, refusal to serve from a public socket directory or use a public token directory, sandbox argv contains no token and binds only the socket + token file, explicit network sharing, unsafe command/path/symlink/custom-bind rejection, atomic manifest grant/revoke with inode pinning and concurrent-writer serialization |
 | Security corpus | `security/` (200 scenarios) | Milestone-1 acceptance criteria, below |
 | Assistant gate | `assistant/tests/` | assistant disabled; declared surface read-only & broker-mapped; no direct file/network APIs in the stub |
 | Viewer + Aurora cores | `desktop/tests/` | audit loading/filter/search/chain status and malformed-log fallback; XOR Shell app discovery/search, config sanitising/round-trip and malformed-config fallback, battery/network/memory parsers, wallpaper catalog, panel-opacity CSS and Control Centre text mode |
@@ -36,10 +37,15 @@ python3 tools/check-packages.py
 This catches nonexistent/case-wrong names and missing dependency names
 before a long image build. It is a name-level closure check; apt/lb
 remains authoritative for versions, conflicts and architecture. The final
-GitHub Actions ISO run (40597398794) built and checksum-verified the ISO and
-passed the bounded QEMU/TCG live-session gate with a visible Aurora
-screenshot. The QEMU job boots the extracted kernel/initrd directly, so it
-is not a firmware/bootloader test.
+GitHub Actions ISO run (40819648638, commit `2ac4234`) built and
+checksum-verified the ISO, passed the bounded QEMU/TCG direct-kernel
+live-session gate with a non-blank screenshot, passed an OVMF/UEFI ISO
+boot with a non-blank 1280x800 desktop screenshot, and installed the ISO
+to a 20 GiB virtio disk that booted again (`result=PASS`,
+`install_result=PASS`, `second_boot_result=PASS`). The direct QEMU job
+boots the extracted kernel/initrd, and the install job boots the
+installer kernel directly; the UEFI job is the firmware/bootloader path.
+Secure Boot, firmware boot menus and BIOS ISO boot remain untested.
 
 ## The 200-scenario corpus
 
@@ -83,12 +89,22 @@ expectation is corrected with a written justification.
   compile-checked and their non-GTK cores/headless CLIs are tested; the
   final ISO screenshot proves the Aurora panel/dock and wallpaper render,
   but on-desktop interaction (Esc denies, Deny focused, launcher
-  search/focus, Wnck window buttons, Ctrl+1–4 activity filters) is still a
-  Milestone-2 checklist item — `xor-activity --text`,
-  `xor-shell --status-json` and `xor-control-center --text` *are* exercised.
-* Firmware/bootloader boot: the final cloud gate extracts the kernel/initrd
-  and attaches the ISO as a CD-ROM. Boot the ISO through UEFI/OVMF and BIOS
-  on a team machine before claiming the full bootloader path.
+  search/focus, Wnck window buttons, Ctrl+1–4 activity filters, the
+  Control Centre file chooser) is still a Milestone-2 checklist item —
+  `xor-activity --text`, `xor-shell --status-json` and
+  `xor-control-center --text` *are* exercised, and manifest grant/revoke
+  is covered headlessly.
+* Install-to-disk/second boot: `tools/test-install-qemu.sh` boots the
+  installer kernel/initrd directly, installs to a virtio disk, then boots
+  the installed disk. It is not a firmware/bootloader test. The latest
+  Actions run (40819648638) passed `install_result=PASS` and
+  `second_boot_result=PASS`; the second boot uses SeaBIOS from the
+  installed disk.
+* Firmware/bootloader boot: the OVMF/UEFI gate now boots the ISO through
+  firmware (no direct kernel/initrd) to the XOR desktop. Secure Boot,
+  firmware boot menus, BIOS ISO boot and broad physical hardware remain
+  unverified; test those on a team machine before claiming the full
+  bootloader path.
 * Fuzzing the manifest/wire parsers, sustained concurrency/load (the
   audit log and `max_uses` have two-writer/concurrent-process tests, but
   the daemon remains single-threaded and has no rate limiting), and

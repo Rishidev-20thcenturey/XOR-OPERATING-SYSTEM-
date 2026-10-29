@@ -43,6 +43,7 @@ gir1.2-gtk-3.0
 gir1.2-wnck-3.0
 pavucontrol
 procps
+bubblewrap
 
 # --- Everyday tools (reuse, don't reinvent) ---
 firefox-esr
@@ -55,3 +56,5 @@ live-boot
 live-config
 live-config-systemd
 systemd-sysv
+# Launcher for the Debian installer included by --debian-installer live.
+debian-installer-launcher

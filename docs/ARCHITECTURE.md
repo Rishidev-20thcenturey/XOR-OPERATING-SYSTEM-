@@ -45,18 +45,23 @@ the desktop shell must not require touching `policy.py`, `paths.py` or
 
 ## Request lifecycle
 
-1. Tool sends `ActionRequest{tool, operation, path, content?, description}`.
+1. Tool sends `ActionRequest{tool, operation, path, content?, description,
+   tool_token?}`. With a token directory configured, the broker verifies
+   the per-tool bearer token before policy evaluation.
 2. `PolicyEngine.evaluate` — denied unless a capability matches tool +
    operation + scoped resource + right + not expired/exhausted.
    `untrusted_context` (document/tool-output text) is never read.
 3. Writes only: `ConfirmationManager` asks the user; approval mints a
    **single-use token bound to the action digest** (tool+op+canonical
    path+content SHA-256), valid 120 s. Deny is the default on every path.
-4. `Executor` re-verifies the token and opens the target FD-anchored
-   inside the grant (`dir_fd` walk, `O_NOFOLLOW` on every component),
-   so symlink/traversal/race tricks fail closed.
+   The tool token is rechecked after the prompt, so revocation blocks
+   execution.
+4. `Executor` re-verifies the confirmation token and opens the target
+   FD-anchored inside the grant (`dir_fd` walk, `O_NOFOLLOW` on every
+   component), so symlink/traversal/race tricks fail closed.
 5. Exactly one audit record per request — allowed, denied or failed —
-   appended from a `finally` block. Records hold digests, never content.
+   appended from a `finally` block. Malformed wire requests get a
+   `(malformed)` audit record. Records hold digests, never content.
 
 ## Key decisions (ADRs in `docs/adr/`)
 
@@ -69,10 +74,12 @@ the desktop shell must not require touching `policy.py`, `paths.py` or
 
 * Not system-wide enforcement: only requests *through the broker API*
   are mediated. Same-user processes can still open your files directly.
-  Isolating tool/assistant processes (bubblewrap/Flatpak portals) so
-  the broker is their only path is the Milestone-4 direction.
-* Tool identity over the socket is self-declared (peer UID/PID are read
-  and returned in the response, but not used for authorization; names
-  are not authenticated yet).
+  `xor-broker launch` is an opt-in bubblewrap profile for cooperating
+  tools (private namespaces, cleared environment, only the broker socket
+  and the tool's own token file). It is not applied to every tool or the
+  assistant yet, and it is not a syscall firewall.
+* Tool identity is token-based only when a token directory is configured.
+  Tokens are not bound to peer UID/PID or a sandbox instance; a same-UID
+  process that can read the token directory can still impersonate a tool.
 * No updater yet — `docs/UPDATE_DESIGN.md` is design only.
 * No LLM, no network capability for tools, by design.

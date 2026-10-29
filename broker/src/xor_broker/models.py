@@ -79,6 +79,7 @@ class ReasonCode(str, enum.Enum):
     PATH_ESCAPE = "path_escape"
     EXECUTION_ERROR = "execution_error"
     AUDIT_FAILURE = "audit_failure"
+    UNAUTHENTICATED_TOOL = "unauthenticated_tool"
 
 
 def utcnow() -> datetime:
@@ -128,6 +129,7 @@ class ActionRequest:
     description: str = ""                      # human summary shown to user
     untrusted_context: Optional[str] = None    # NEVER consulted by policy
     request_id: str = field(default_factory=lambda: uuid.uuid4().hex)
+    tool_token: Optional[str] = None           # authenticated session/instance token
 
     def content_digest(self) -> Optional[str]:
         if self.content is None:

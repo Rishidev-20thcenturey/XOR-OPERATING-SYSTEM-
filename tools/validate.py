@@ -183,7 +183,8 @@ def t_qemu_target():
 def t_shell():
     scripts = [
         "tools/build-iso.sh", "tools/run-qemu.sh", "tools/test.sh",
-        "tools/test-build-iso.sh",
+        "tools/test-build-iso.sh", "tools/test-install-qemu.sh",
+        "tools/test-uefi-qemu.sh",
         "os/live-build/auto/config", "os/live-build/auto/build",
         "os/live-build/auto/clean",
         "os/live-build/config/hooks/normal/0900-xor-install.hook.chroot",

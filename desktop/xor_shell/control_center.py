@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -282,11 +283,51 @@ class ControlCentre:  # pragma: no cover - GTK requires display
         return card
 
     def _action(self, box, label, command, css="primary-button"):
-        button = self.Gtk.Button(label=label)
+        button = self.Gtk.Button(label=label, use_underline=True)
         button.get_style_context().add_class(css)
         button.connect("clicked", lambda _b, c=command: _run(c))
         box.add(button)
         return button
+
+    def _grant_file(self):
+        dialog = self.Gtk.FileChooserDialog(
+            title="Grant one file to a tool",
+            transient_for=self.window,
+            action=self.Gtk.FileChooserAction.OPEN)
+        dialog.add_buttons("_Cancel", self.Gtk.ResponseType.CANCEL,
+                           "_Grant", self.Gtk.ResponseType.ACCEPT)
+        dialog.set_default_response(self.Gtk.ResponseType.CANCEL)
+        extra = self.Gtk.Box(orientation=self.Gtk.Orientation.VERTICAL, spacing=6)
+        label = self.Gtk.Label(label="_Tool name", use_underline=True)
+        entry = self.Gtk.Entry()
+        entry.set_text("demo-reader")
+        entry.set_activates_default(False)
+        label.set_mnemonic_widget(entry)
+        extra.add(label)
+        extra.add(entry)
+        dialog.set_extra_widget(extra)
+        response = dialog.run()
+        selected = dialog.get_filename()
+        tool = entry.get_text().strip()
+        dialog.destroy()
+        if response != self.Gtk.ResponseType.ACCEPT or not selected:
+            self.grant_status.set_text("File grant cancelled.")
+            return
+        if not re.fullmatch(r"[A-Za-z0-9_.-]{1,128}", tool):
+            self.grant_status.set_text(
+                "Tool name must be 1-128 characters from [A-Za-z0-9_.-].")
+            return
+        try:
+            result = subprocess.run(
+                ["xor-broker", "grant", "--tool", tool, "--operation", "read_file",
+                 "--path", selected],
+                capture_output=True, text=True, check=False)
+        except OSError as exc:
+            self.grant_status.set_text(f"Grant failed: {exc}")
+            return
+        message = (result.stdout or result.stderr or "").strip()
+        self.grant_status.set_text(
+            message if result.returncode == 0 else f"Grant failed: {message}")
 
     def show_page(self, page):
         self.stack.set_visible_child_name(page)
@@ -443,9 +484,17 @@ class ControlCentre:  # pragma: no cover - GTK requires display
         else:
             box.add(self._card("Audit unavailable", "Run xor-broker demo or start the broker."))
         box.add(self._card("Assistant: OFF", "No model or cloud service is connected."))
-        self._action(box, "Open Activity", ["xor-activity"])
-        self._action(box, "Run Broker Demo", ["xor-broker-demo-run"], "panel-button")
-        self._action(box, "Verify Audit Chain",
+        grant_button = self.Gtk.Button(label="_Grant a file…", use_underline=True)
+        grant_button.get_style_context().add_class("primary-button")
+        grant_button.connect("clicked", lambda _b: self._grant_file())
+        box.add(grant_button)
+        self.grant_status = self._label(
+            "Choose a file and a tool; only that selected inode is granted.",
+            "muted-label")
+        box.add(self.grant_status)
+        self._action(box, "_Open Activity", ["xor-activity"])
+        self._action(box, "_Run Broker Demo", ["xor-broker-demo-run"], "panel-button")
+        self._action(box, "_Verify Audit Chain",
                      ["xfce4-terminal", "--hold", "-e", "xor-broker audit verify"],
                      "panel-button")
         return page
