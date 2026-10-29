@@ -98,6 +98,10 @@ jobs:
           QEMU_PID=$!
           echo "qemu_pid=$QEMU_PID"
 
+          for _ in $(seq 1 60); do
+            [ -S "$SERIAL_SOCK" ] && break
+            sleep 1
+          done
           socat UNIX-CONNECT:"$SERIAL_SOCK" PTY,link="$SERIAL_PTY",raw,echo=0 \
             > evidence/socat-serial.log 2>&1 &
           SOCAT_PID=$!
