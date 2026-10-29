@@ -42,7 +42,7 @@ FIRMWARE_CODE=""
 FIRMWARE_VARS=""
 FW_ARGS=""
 
-# shellcheck disable=SC2329  # invoked through trap
+# shellcheck disable=SC2317,SC2329  # invoked through trap
 cleanup() {
     if [ -n "$QEMU_PID" ] && kill -0 "$QEMU_PID" 2>/dev/null; then
         kill "$QEMU_PID" 2>/dev/null || true

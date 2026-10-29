@@ -35,7 +35,7 @@ SECOND_RESULT=NOT_RUN
 QEMU_PID=
 SECOND_PID=
 
-# shellcheck disable=SC2329  # invoked through trap
+# shellcheck disable=SC2317,SC2329  # invoked through trap
 cleanup() {
     if [ -n "$QEMU_PID" ] && kill -0 "$QEMU_PID" 2>/dev/null; then
         kill "$QEMU_PID" 2>/dev/null || true
@@ -98,11 +98,11 @@ if [ ! -f "$KERNEL" ] || [ ! -f "$INITRD" ]; then
     KERNEL=$(find -L "$OUT/install" -maxdepth 2 -type f -name 'vmlinuz*' | head -n1)
     INITRD=$(find -L "$OUT/install" -maxdepth 2 -type f -name 'initrd*' | head -n1)
 fi
-[ -n "$KERNEL" ] && [ -n "$INITRD" ] || {
+if [ -z "$KERNEL" ] || [ -z "$INITRD" ]; then
     INSTALL_RESULT=FAIL
     echo "installer kernel/initrd not found" >&2
     finish
-}
+fi
 echo "installer_kernel=$KERNEL" > "$OUT/install-inputs.txt"
 echo "installer_initrd=$INITRD" >> "$OUT/install-inputs.txt"
 
