@@ -133,22 +133,30 @@ jobs:
             printf 'user\n' > "$SERIAL_PTY"
             sleep 3
             printf 'live\n' > "$SERIAL_PTY"
-            sleep 8
+            sleep 30
 
-            printf 'sudo systemctl status lightdm --no-pager\n' > "$SERIAL_PTY"
-            sleep 4
+            printf 'sudo systemctl status graphical.target --no-pager\n' > "$SERIAL_PTY"
+            sleep 3
             printf 'live\n' > "$SERIAL_PTY"
-            sleep 12
+            sleep 10
+            printf 'sudo systemctl status plymouth-quit-wait --no-pager\n' > "$SERIAL_PTY"
+            sleep 10
+            printf 'sudo systemctl --failed --no-pager\n' > "$SERIAL_PTY"
+            sleep 10
+            printf 'sudo cat /home/user/.xsession-errors\n' > "$SERIAL_PTY"
+            sleep 10
+            printf 'pgrep -a xfce\n' > "$SERIAL_PTY"
+            sleep 10
+            printf 'sudo tail -n 80 /var/log/Xorg.0.log\n' > "$SERIAL_PTY"
+            sleep 10
+          fi
 
-            printf 'sudo cat /var/log/lightdm/lightdm.log\n' > "$SERIAL_PTY"
-            sleep 4
-            printf 'live\n' > "$SERIAL_PTY"
-            sleep 12
-
-            printf 'sudo journalctl -u lightdm --no-pager\n' > "$SERIAL_PTY"
-            sleep 4
-            printf 'live\n' > "$SERIAL_PTY"
-            sleep 15
+          if [ -S "$MONITOR" ]; then
+            printf 'screendump %s\n' "$PWD/evidence/screenshot.ppm" |
+              timeout 15 socat - UNIX-CONNECT:"$MONITOR" >/dev/null 2>&1 || true
+            if [ -s evidence/screenshot.ppm ] && command -v convert >/dev/null 2>&1; then
+              convert evidence/screenshot.ppm evidence/screenshot.png || true
+            fi
           fi
 
           kill "$CAT_PID" "$SOCAT_PID" 2>/dev/null || true
