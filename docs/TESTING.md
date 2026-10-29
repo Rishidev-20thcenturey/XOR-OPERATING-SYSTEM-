@@ -37,13 +37,15 @@ python3 tools/check-packages.py
 This catches nonexistent/case-wrong names and missing dependency names
 before a long image build. It is a name-level closure check; apt/lb
 remains authoritative for versions, conflicts and architecture. The final
-GitHub Actions ISO run (40737390213) built and checksum-verified the ISO,
-passed the bounded QEMU/TCG live-session gate with a non-blank screenshot,
-and installed the ISO to a 20 GiB virtio disk that booted again
-(`result=PASS`, `install_result=PASS`, `second_boot_result=PASS`). The
-live QEMU job boots the extracted kernel/initrd directly, and the install
-job boots the installer kernel directly, so neither is a
-firmware/bootloader menu test.
+GitHub Actions ISO run (40819648638, commit `2ac4234`) built and
+checksum-verified the ISO, passed the bounded QEMU/TCG direct-kernel
+live-session gate with a non-blank screenshot, passed an OVMF/UEFI ISO
+boot with a non-blank 1280x800 desktop screenshot, and installed the ISO
+to a 20 GiB virtio disk that booted again (`result=PASS`,
+`install_result=PASS`, `second_boot_result=PASS`). The direct QEMU job
+boots the extracted kernel/initrd, and the install job boots the
+installer kernel directly; the UEFI job is the firmware/bootloader path.
+Secure Boot, firmware boot menus and BIOS ISO boot remain untested.
 
 ## The 200-scenario corpus
 
@@ -94,12 +96,15 @@ expectation is corrected with a written justification.
   is covered headlessly.
 * Install-to-disk/second boot: `tools/test-install-qemu.sh` boots the
   installer kernel/initrd directly, installs to a virtio disk, then boots
-  the installed disk. It is not a firmware/bootloader test. See
-  `docs/TEST_RESULTS.md` for the latest Actions result; until a run is
-  `PASS`, the installer path is implemented but unproven.
-* Firmware/bootloader boot: the final cloud gate extracts the kernel/initrd
-  and attaches the ISO as a CD-ROM. Boot the ISO through UEFI/OVMF and BIOS
-  on a team machine before claiming the full bootloader path.
+  the installed disk. It is not a firmware/bootloader test. The latest
+  Actions run (40819648638) passed `install_result=PASS` and
+  `second_boot_result=PASS`; the second boot uses SeaBIOS from the
+  installed disk.
+* Firmware/bootloader boot: the OVMF/UEFI gate now boots the ISO through
+  firmware (no direct kernel/initrd) to the XOR desktop. Secure Boot,
+  firmware boot menus, BIOS ISO boot and broad physical hardware remain
+  unverified; test those on a team machine before claiming the full
+  bootloader path.
 * Fuzzing the manifest/wire parsers, sustained concurrency/load (the
   audit log and `max_uses` have two-writer/concurrent-process tests, but
   the daemon remains single-threaded and has no rate limiting), and
