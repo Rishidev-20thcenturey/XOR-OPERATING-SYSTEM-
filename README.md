@@ -51,7 +51,7 @@ Modern operating systems leak user data by default, grant broad ambient permissi
 
 | Subsystem Component | Operational Status | Cryptographic & Runtime Evidence |
 |---|---|---|
-| **CI Core Suite** | `PASS [GREEN]` | [GitHub Actions Run 40737382902](https://github.com/Rishidev-20thcenturey/XOR-OPERATING-SYSTEM-/actions/runs/40737382902) (Python 3.11, 3.12, ShellCheck) |
+| **CI Core Suite** | `PASS [GREEN]` | [GitHub Actions Run 40824400866](https://github.com/Rishidev-20thcenturey/XOR-OPERATING-SYSTEM-/actions/runs/40824400866) (Python 3.11, 3.12, ShellCheck) |
 | **Unit Verification** | `112 / 112 PASS` | 96 broker security tests + 16 desktop/assistant gate suites passing |
 | **Adversarial Corpus** | `200 / 200 PASS` | 100 out-of-grant attempts, 50 injection twins, 50 legitimate operations |
 | **Live ISO Image** | `VERIFIED` | 1.731 GiB live hybrid ISO (`SHA-256: 08af43a2a6d1bd3207c627b7b47d11344e5d347c6a746c1e60a3a0e1675dfa83`) |
