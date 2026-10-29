@@ -30,6 +30,8 @@ PPM="$OUT/screenshot.ppm"
 PNG="$OUT/screenshot.png"
 RESULT=FAIL
 GRAPHICAL=0
+DISPLAY_START=0
+SETTLED=0
 SIGNAL=""
 QEMU_RC="not-started"
 SCREENSHOT="not-captured"
@@ -67,6 +69,24 @@ press_enter() {
     [ -S "$MONITOR" ] || return 0
     printf 'sendkey ret\n' | \
         timeout 10 socat - UNIX-CONNECT:"$MONITOR" >/dev/null 2>&1 || true
+}
+
+capture_screenshot() {
+    [ -S "$MONITOR" ] || return 1
+    command -v convert >/dev/null 2>&1 || return 1
+    rm -f "$PPM" "$PNG"
+    if ! timeout 15 sh -c "printf 'screendump %s\\n' '$PPM' | socat - UNIX-CONNECT:'$MONITOR'" \
+        > "$OUT/screendump.log" 2>&1; then
+        return 1
+    fi
+    [ -s "$PPM" ] || return 1
+    convert "$PPM" "$PNG" >> "$OUT/screendump.log" 2>&1 || return 1
+    if [ -s "$PNG" ] && \
+        [ "$(stat -c%s "$PNG" 2>/dev/null || echo 0)" -ge 10000 ]; then
+        SCREENSHOT=$PNG
+        return 0
+    fi
+    return 1
 }
 
 finish() {
@@ -152,13 +172,33 @@ sleep 60
 snapshot boot-105s
 
 for _ in $(seq 1 $((TIMEOUT / 10))); do
-    if [ -f "$SERIAL" ] && grep -Eqi \
-        'Reached target Graphical Interface|Started LightDM|Started lightdm\.service' \
-        "$SERIAL"; then
+    if [ -f "$SERIAL" ]; then
+        if grep -Eqi \
+            'Reached target Graphical Interface|Started LightDM|Started lightdm\.service' \
+            "$SERIAL"; then
+            GRAPHICAL=1
+            SIGNAL=$(grep -Ei 'Reached target Graphical Interface|Started LightDM|Started lightdm\.service' "$SERIAL" | tail -n1)
+            break
+        fi
+        if grep -Eqi 'Starting lightdm\.service|lightdm\.service - Light Display Manager' "$SERIAL"; then
+            DISPLAY_START=1
+        fi
+    fi
+
+    # LightDM switches the active VT, so the graphical-target line may never
+    # reach the serial console.  After LightDM starts, wait for XFCE to paint
+    # and use a non-blank framebuffer as the real proof.
+    if [ "$DISPLAY_START" = 1 ] && [ "$SETTLED" = 0 ]; then
+        sleep 60
+        SETTLED=1
+    fi
+    if [ "$SETTLED" = 1 ] && capture_screenshot; then
         GRAPHICAL=1
-        SIGNAL=$(grep -Ei 'Reached target Graphical Interface|Started LightDM|Started lightdm\.service' "$SERIAL" | tail -n1)
+        SCREENSHOT_OK=1
+        SIGNAL="non-blank framebuffer after LightDM started"
         break
     fi
+
     if ! kill -0 "$QEMU_PID" 2>/dev/null; then
         QEMU_RC=0
         wait "$QEMU_PID" || QEMU_RC=$?
@@ -167,23 +207,12 @@ for _ in $(seq 1 $((TIMEOUT / 10))); do
     sleep 10
 done
 
-if [ "$GRAPHICAL" = 1 ]; then
+if [ "$GRAPHICAL" = 1 ] && [ "$SCREENSHOT_OK" != 1 ]; then
     sleep "$SCREENSHOT_WAIT"
     for attempt in 1 2 3; do
-        if [ -S "$MONITOR" ] && \
-            timeout 15 sh -c "printf 'screendump %s\\n' '$PPM' | socat - UNIX-CONNECT:'$MONITOR'" \
-                > "$OUT/screendump.log" 2>&1 && \
-            [ -s "$PPM" ]; then
-            SCREENSHOT="$PPM"
-            if command -v convert >/dev/null 2>&1; then
-                convert "$PPM" "$PNG" >> "$OUT/screendump.log" 2>&1 || true
-                [ -s "$PNG" ] && SCREENSHOT="$PNG"
-            fi
-            if [ -f "$SCREENSHOT" ] && \
-                [ "$(stat -c%s "$SCREENSHOT" 2>/dev/null || echo 0)" -ge 10000 ]; then
-                SCREENSHOT_OK=1
-                break
-            fi
+        if capture_screenshot; then
+            SCREENSHOT_OK=1
+            break
         fi
         echo "screenshot attempt $attempt was blank or too small; retrying"
         sleep 60
