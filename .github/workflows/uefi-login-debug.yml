@@ -62,7 +62,9 @@ jobs:
           ISO=$(find artifacts/iso -type f -name '*.iso' -size +100M | head -n1)
           test -n "$ISO" || { echo "ERROR: ISO not found" >&2; exit 1; }
           ISO=$(cd "$(dirname "$ISO")" && pwd)/$(basename "$ISO")
-          SERIAL="$PWD/evidence/serial.log"
+          SERIAL_SOCK="$PWD/evidence/serial.sock"
+          SERIAL_LOG="$PWD/evidence/serial.log"
+          SERIAL_PTY="$PWD/evidence/serial.pty"
           MONITOR="$PWD/evidence/monitor.sock"
           VARS="$PWD/evidence/OVMF_VARS.fd"
           cp /usr/share/OVMF/OVMF_VARS_4M.fd "$VARS"
@@ -72,27 +74,6 @@ jobs:
             printf 'sendkey %s\n' "$1" |
               timeout 5 socat - UNIX-CONNECT:"$MONITOR" >/dev/null 2>&1 || true
             sleep 0.15
-          }
-
-          type_text() {
-            text=$1
-            i=0
-            while [ "$i" -lt "${#text}" ]; do
-              ch=$(printf '%s' "$text" | cut -c$((i + 1)))
-              case "$ch" in
-                ' ') key=spc ;;
-                '/') key=slash ;;
-                '.') key=dot ;;
-                '-') key=minus ;;
-                '_') key=shift-minus ;;
-                ':') key=shift-semicolon ;;
-                [a-z0-9]) key=$ch ;;
-                [A-Z]) key="shift-$(printf '%s' "$ch" | tr 'A-Z' 'a-z')" ;;
-                *) echo "WARNING: unsupported character: $ch" >&2; key= ;;
-              esac
-              [ -n "$key" ] && sendkey "$key"
-              i=$((i + 1))
-            done
           }
 
           qemu-system-x86_64 \
@@ -109,7 +90,7 @@ jobs:
             -device virtio-net-pci,netdev=net0 \
             -netdev user,id=net0 \
             -vnc 127.0.0.1:2 \
-            -serial "file:$SERIAL" \
+            -serial "unix:$SERIAL_SOCK,server,nowait" \
             -monitor "unix:$MONITOR,server,nowait" \
             -boot order=d \
             -no-reboot \
@@ -117,13 +98,23 @@ jobs:
           QEMU_PID=$!
           echo "qemu_pid=$QEMU_PID"
 
+          socat UNIX-CONNECT:"$SERIAL_SOCK" PTY,link="$SERIAL_PTY",raw,echo=0 \
+            > evidence/socat-serial.log 2>&1 &
+          SOCAT_PID=$!
+          for _ in $(seq 1 30); do
+            [ -e "$SERIAL_PTY" ] && break
+            sleep 1
+          done
+          cat "$SERIAL_PTY" > "$SERIAL_LOG" &
+          CAT_PID=$!
+
           READY=0
           for i in $(seq 1 120); do
             sleep 2
             if [ $((i % 5)) -eq 0 ]; then
               sendkey ret
             fi
-            if [ -f "$SERIAL" ] && grep -aq 'XOR login:' "$SERIAL"; then
+            if [ -f "$SERIAL_LOG" ] && grep -aq 'XOR login:' "$SERIAL_LOG"; then
               READY=1
               break
             fi
@@ -135,34 +126,28 @@ jobs:
 
           if [ "$READY" = 1 ]; then
             sleep 5
-            type_text user
-            sendkey ret
+            printf 'user\n' > "$SERIAL_PTY"
             sleep 3
-            type_text live
-            sendkey ret
+            printf 'live\n' > "$SERIAL_PTY"
             sleep 8
 
-            type_text "sudo systemctl status lightdm --no-pager"
-            sendkey ret
+            printf 'sudo systemctl status lightdm --no-pager\n' > "$SERIAL_PTY"
             sleep 4
-            type_text live
-            sendkey ret
+            printf 'live\n' > "$SERIAL_PTY"
             sleep 12
 
-            type_text "sudo cat /var/log/lightdm/lightdm.log"
-            sendkey ret
+            printf 'sudo cat /var/log/lightdm/lightdm.log\n' > "$SERIAL_PTY"
             sleep 4
-            type_text live
-            sendkey ret
+            printf 'live\n' > "$SERIAL_PTY"
             sleep 12
 
-            type_text "sudo journalctl -u lightdm --no-pager"
-            sendkey ret
+            printf 'sudo journalctl -u lightdm --no-pager\n' > "$SERIAL_PTY"
             sleep 4
-            type_text live
-            sendkey ret
+            printf 'live\n' > "$SERIAL_PTY"
             sleep 15
           fi
+
+          kill "$CAT_PID" "$SOCAT_PID" 2>/dev/null || true
 
           if kill -0 "$QEMU_PID" 2>/dev/null; then
             printf 'quit\n' | timeout 5 socat - UNIX-CONNECT:"$MONITOR" >/dev/null 2>&1 || true
