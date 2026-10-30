@@ -8,6 +8,7 @@
 # Exit status is 0 after writing evidence; result.txt says PASS/FAIL.
 set -eu
 
+SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
 ISO=${1:?usage: test-uefi-qemu.sh ISO [EVIDENCE_DIR]}
 OUT=${2:-uefi-evidence}
 FIRMWARE=${XOR_FIRMWARE:-uefi}
@@ -28,6 +29,7 @@ mkdir -p "$OUT"
 ISO=$(cd "$(dirname "$ISO")" && pwd)/$(basename "$ISO")
 SERIAL="$OUT/serial.log"
 MONITOR="$OUT/monitor.sock"
+QGA="$OUT/qga.sock"
 PPM="$OUT/screenshot.ppm"
 PNG="$OUT/screenshot.png"
 RESULT=FAIL
@@ -38,6 +40,7 @@ SIGNAL=""
 QEMU_RC="not-started"
 SCREENSHOT="not-captured"
 SCREENSHOT_OK=0
+SANDBOX_RESULT="not-run"
 QEMU_PID=
 FIRMWARE_MODE=""
 FIRMWARE_CODE=""
@@ -100,6 +103,8 @@ finish() {
         echo "serial_log=$SERIAL"
         echo "screenshot=$SCREENSHOT"
         echo "screenshot_ok=$SCREENSHOT_OK"
+        echo "sandbox_result=$SANDBOX_RESULT"
+        echo "sandbox_log=$OUT/sandbox.log"
         echo "firmware_mode=$FIRMWARE_MODE"
         echo "firmware_code=$FIRMWARE_CODE"
         echo "firmware_vars=$FIRMWARE_VARS"
@@ -167,6 +172,9 @@ qemu-system-x86_64 \
     -vnc 127.0.0.1:2 \
     -serial "file:$SERIAL" \
     -monitor "unix:$MONITOR,server,nowait" \
+    -chardev "socket,id=qga0,path=$QGA,server=on,wait=off" \
+    -device virtio-serial-pci,id=virtio-serial0 \
+    -device virtserialport,bus=virtio-serial0.0,chardev=qga0,name=org.qemu.guest_agent.0 \
     -boot order=d \
     -no-reboot \
     > "$OUT/qemu-stdout.log" 2>&1 &
@@ -244,6 +252,27 @@ elif [ "$QEMU_RC" != "not-started" ]; then
 else
     RESULT=FAIL
     SIGNAL="no graphical signal within the timeout"
+fi
+
+if [ "${XOR_SANDBOX_CHECK:-0}" = 1 ]; then
+    if [ "$RESULT" != PASS ]; then
+        SANDBOX_RESULT=not-run
+    elif ! command -v python3 >/dev/null 2>&1; then
+        SANDBOX_RESULT=FAIL
+        RESULT=FAIL
+        SIGNAL="sandbox check requires python3"
+    else
+        guest_script=$(cat "$SCRIPT_DIR/guest-sandbox-check.sh")
+        if python3 "$SCRIPT_DIR/qga-query.py" "$QGA" --exec "$guest_script" \
+            --connect-timeout 120 --exec-timeout 180 \
+            > "$OUT/sandbox.log" 2>&1; then
+            SANDBOX_RESULT=PASS
+        else
+            SANDBOX_RESULT=FAIL
+            RESULT=FAIL
+            SIGNAL="sandbox check failed; see sandbox.log"
+        fi
+    fi
 fi
 
 if [ -f "$SCREENSHOT" ] && command -v identify >/dev/null 2>&1; then

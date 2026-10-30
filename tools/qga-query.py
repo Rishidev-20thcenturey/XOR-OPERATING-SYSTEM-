@@ -285,7 +285,9 @@ def sync(sock: socket.socket, timeout: float) -> None:
     raise AgentError("guest agent did not answer guest-sync")
 
 
-def run_command(sock: socket.socket, command: str) -> tuple[str, str, int]:
+def run_command(
+    sock: socket.socket, command: str, timeout: float = 30.0
+) -> tuple[str, str, int]:
     started = request(
         sock,
         {
@@ -302,7 +304,7 @@ def run_command(sock: socket.socket, command: str) -> tuple[str, str, int]:
     if not isinstance(pid, int):
         raise AgentError(f"guest-exec returned no pid: {started!r}")
 
-    deadline = time.monotonic() + 30.0
+    deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         status = request(
             sock,
@@ -330,14 +332,44 @@ def run_command(sock: socket.socket, command: str) -> tuple[str, str, int]:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("socket", help="QEMU guest agent Unix socket")
-    parser.add_argument("output", help="directory for diagnostic text files")
+    parser.add_argument(
+        "output", nargs="?", help="directory for diagnostic text files")
     parser.add_argument(
         "--connect-timeout",
         type=float,
         default=120.0,
         help="seconds to wait for the agent socket (default: 120)",
     )
+    parser.add_argument(
+        "--exec", dest="exec_command", metavar="COMMAND",
+        help="run one shell command in the guest instead of the diagnostic set",
+    )
+    parser.add_argument(
+        "--exec-timeout",
+        type=float,
+        default=180.0,
+        help="seconds to wait for --exec to finish (default: 180)",
+    )
     args = parser.parse_args()
+    if args.exec_command is None and not args.output:
+        parser.error("output is required unless --exec is used")
+
+    if args.exec_command is not None:
+        try:
+            sock = connect_socket(args.socket, args.connect_timeout)
+            try:
+                sync(sock, args.connect_timeout)
+                stdout, stderr, exitcode = run_command(
+                    sock, args.exec_command, args.exec_timeout)
+            finally:
+                sock.close()
+        except (AgentError, OSError) as exc:
+            print(f"qga-exec: {exc}", file=sys.stderr)
+            return 1
+        sys.stdout.write(stdout)
+        sys.stderr.write(stderr)
+        print(f"qga_exitcode={exitcode}", file=sys.stderr)
+        return 0 if exitcode == 0 else 1
 
     output = Path(args.output)
     output.mkdir(parents=True, exist_ok=True)
