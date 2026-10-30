@@ -408,6 +408,25 @@ jobs:
           echo "result=${result:-FAIL}" >> "$GITHUB_OUTPUT"
           echo "screenshot_ok=${screenshot_ok:-0}" >> "$GITHUB_OUTPUT"
 
+      - name: Attempt BIOS/SeaBIOS boot and capture evidence
+        id: bios
+        if: steps.build.outputs.ok == 'true'
+        continue-on-error: true
+        timeout-minutes: 45
+        shell: bash
+        env:
+          ISO_OUTPUT: ${{ steps.build.outputs.iso_path }}
+          XOR_FIRMWARE: bios
+        run: |
+          set -uo pipefail
+          mkdir -p bios-evidence
+          iso="$PWD/$ISO_OUTPUT"
+          sh tools/test-uefi-qemu.sh "$iso" bios-evidence
+          result=$(sed -n 's/^result=//p' bios-evidence/result.txt | head -n1)
+          screenshot_ok=$(sed -n 's/^screenshot_ok=//p' bios-evidence/result.txt | head -n1)
+          echo "result=${result:-FAIL}" >> "$GITHUB_OUTPUT"
+          echo "screenshot_ok=${screenshot_ok:-0}" >> "$GITHUB_OUTPUT"
+
       - name: Upload build logs, manifest and checksum
         if: always()
         uses: actions/upload-artifact@v4
@@ -448,7 +467,16 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
-      - name: Fail unless build, QEMU and UEFI gates passed
+      - name: Upload BIOS/SeaBIOS logs and screenshot
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: xor-bios-evidence-${{ github.run_id }}
+          path: bios-evidence/
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Fail unless build, QEMU, UEFI and BIOS gates passed
         if: always()
         shell: bash
         env:
@@ -457,12 +485,16 @@ jobs:
           SCREENSHOT_OK: ${{ steps.qemu.outputs.screenshot_ok }}
           UEFI_RESULT: ${{ steps.uefi.outputs.result }}
           UEFI_SCREENSHOT_OK: ${{ steps.uefi.outputs.screenshot_ok }}
+          BIOS_RESULT: ${{ steps.bios.outputs.result }}
+          BIOS_SCREENSHOT_OK: ${{ steps.bios.outputs.screenshot_ok }}
         run: |
           echo "build_ok=$BUILD_OK"
           echo "qemu_result=$QEMU_RESULT"
           echo "screenshot_ok=$SCREENSHOT_OK"
           echo "uefi_result=$UEFI_RESULT"
           echo "uefi_screenshot_ok=$UEFI_SCREENSHOT_OK"
+          echo "bios_result=$BIOS_RESULT"
+          echo "bios_screenshot_ok=$BIOS_SCREENSHOT_OK"
           if [ "$BUILD_OK" != "true" ]; then
             echo "::error::ISO build did not succeed; see the uploaded build evidence."
             exit 1
@@ -483,7 +515,15 @@ jobs:
             echo "::error::UEFI reached the graphical target but the screenshot was blank or too small."
             exit 1
           fi
-          echo "ISO build succeeded; direct-kernel QEMU and OVMF/UEFI both reached the graphical target with non-blank screenshots."
+          if [ "$BIOS_RESULT" != "PASS" ]; then
+            echo "::error::BIOS result was '$BIOS_RESULT', not PASS. See xor-bios-evidence."
+            exit 1
+          fi
+          if [ "$BIOS_SCREENSHOT_OK" != "1" ]; then
+            echo "::error::BIOS reached the graphical target but the screenshot was blank or too small."
+            exit 1
+          fi
+          echo "ISO build succeeded; direct-kernel QEMU, OVMF/UEFI and SeaBIOS all reached the graphical target with non-blank screenshots."
 
   install-to-disk:
     name: Install ISO to disk and boot the installed disk
