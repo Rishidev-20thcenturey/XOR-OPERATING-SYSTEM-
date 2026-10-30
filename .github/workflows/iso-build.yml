@@ -408,7 +408,7 @@ jobs:
           echo "result=${result:-FAIL}" >> "$GITHUB_OUTPUT"
           echo "screenshot_ok=${screenshot_ok:-0}" >> "$GITHUB_OUTPUT"
 
-      - name: Attempt BIOS/SeaBIOS boot and capture evidence
+      - name: Attempt BIOS/SeaBIOS boot and broker sandbox check
         id: bios
         if: steps.build.outputs.ok == 'true'
         continue-on-error: true
@@ -417,6 +417,7 @@ jobs:
         env:
           ISO_OUTPUT: ${{ steps.build.outputs.iso_path }}
           XOR_FIRMWARE: bios
+          XOR_SANDBOX_CHECK: "1"
         run: |
           set -uo pipefail
           mkdir -p bios-evidence
@@ -424,8 +425,10 @@ jobs:
           sh tools/test-uefi-qemu.sh "$iso" bios-evidence
           result=$(sed -n 's/^result=//p' bios-evidence/result.txt | head -n1)
           screenshot_ok=$(sed -n 's/^screenshot_ok=//p' bios-evidence/result.txt | head -n1)
+          sandbox_result=$(sed -n 's/^sandbox_result=//p' bios-evidence/result.txt | head -n1)
           echo "result=${result:-FAIL}" >> "$GITHUB_OUTPUT"
           echo "screenshot_ok=${screenshot_ok:-0}" >> "$GITHUB_OUTPUT"
+          echo "sandbox_result=${sandbox_result:-FAIL}" >> "$GITHUB_OUTPUT"
 
       - name: Upload build logs, manifest and checksum
         if: always()
@@ -467,7 +470,7 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
-      - name: Upload BIOS/SeaBIOS logs and screenshot
+      - name: Upload BIOS/SeaBIOS logs, sandbox and screenshot
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -476,7 +479,7 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
-      - name: Fail unless build, QEMU, UEFI and BIOS gates passed
+      - name: Fail unless build, QEMU, UEFI, BIOS and sandbox gates passed
         if: always()
         shell: bash
         env:
@@ -487,6 +490,7 @@ jobs:
           UEFI_SCREENSHOT_OK: ${{ steps.uefi.outputs.screenshot_ok }}
           BIOS_RESULT: ${{ steps.bios.outputs.result }}
           BIOS_SCREENSHOT_OK: ${{ steps.bios.outputs.screenshot_ok }}
+          SANDBOX_RESULT: ${{ steps.bios.outputs.sandbox_result }}
         run: |
           echo "build_ok=$BUILD_OK"
           echo "qemu_result=$QEMU_RESULT"
@@ -495,6 +499,7 @@ jobs:
           echo "uefi_screenshot_ok=$UEFI_SCREENSHOT_OK"
           echo "bios_result=$BIOS_RESULT"
           echo "bios_screenshot_ok=$BIOS_SCREENSHOT_OK"
+          echo "sandbox_result=$SANDBOX_RESULT"
           if [ "$BUILD_OK" != "true" ]; then
             echo "::error::ISO build did not succeed; see the uploaded build evidence."
             exit 1
@@ -523,7 +528,11 @@ jobs:
             echo "::error::BIOS reached the graphical target but the screenshot was blank or too small."
             exit 1
           fi
-          echo "ISO build succeeded; direct-kernel QEMU, OVMF/UEFI and SeaBIOS all reached the graphical target with non-blank screenshots."
+          if [ "$SANDBOX_RESULT" != "PASS" ]; then
+            echo "::error::Broker/bubblewrap sandbox check was '$SANDBOX_RESULT', not PASS. See xor-bios-evidence/sandbox.log."
+            exit 1
+          fi
+          echo "ISO build succeeded; direct-kernel QEMU, OVMF/UEFI and SeaBIOS all reached the graphical target, and the broker sandbox boundary passed."
 
   install-to-disk:
     name: Install ISO to disk and boot the installed disk

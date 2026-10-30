@@ -5,6 +5,7 @@
 #
 # Usage: tools/test-uefi-qemu.sh ISO [EVIDENCE_DIR]
 #        XOR_FIRMWARE=bios tools/test-uefi-qemu.sh ISO [EVIDENCE_DIR]
+#        XOR_SANDBOX_CHECK=1 tools/test-uefi-qemu.sh ISO [EVIDENCE_DIR]
 # Exit status is 0 after writing evidence; result.txt says PASS/FAIL.
 set -eu
 
