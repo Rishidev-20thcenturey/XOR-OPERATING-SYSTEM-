@@ -1,0 +1,75 @@
+name: BIOS gate check (manual)
+
+# Temporary check: run the firmware gate in SeaBIOS mode against an existing
+# ISO artifact. Not part of the release gate.
+on:
+  push:
+    branches:
+      - 'feat/sandboxed-app-launch-prototype'
+    paths:
+      - '.github/workflows/bios-gate-debug.yml'
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: GitHub Actions run that produced the ISO artifact
+        required: true
+        default: "40819648638"
+      iso_artifact:
+        description: ISO artifact name
+        required: true
+        default: xor-iso-image-40819648638
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  check:
+    name: Run the BIOS gate against an existing ISO
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      DEBIAN_FRONTEND: noninteractive
+      GH_TOKEN: ${{ github.token }}
+      RUN_ID: ${{ inputs.run_id || '40819648638' }}
+      ISO_ARTIFACT: ${{ inputs.iso_artifact || 'xor-iso-image-40819648638' }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install QEMU and image tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            qemu-system-x86 socat imagemagick
+
+      - name: Download the ISO under test
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/iso
+          gh run download "$RUN_ID" \
+            --repo "$GITHUB_REPOSITORY" \
+            --name "$ISO_ARTIFACT" \
+            --dir artifacts/iso
+          find artifacts/iso -maxdepth 2 -type f -printf '%p %s bytes\n'
+
+      - name: Run the BIOS gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          ISO=$(find artifacts/iso -type f -name '*.iso' -size +100M | head -n1)
+          test -n "$ISO" || { echo "ERROR: ISO not found" >&2; exit 1; }
+          XOR_FIRMWARE=bios tools/test-uefi-qemu.sh "$ISO" bios-evidence
+          cat bios-evidence/result.txt
+
+      - name: Upload BIOS evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: xor-bios-gate-debug-${{ github.run_id }}
+          path: bios-evidence/**
+          if-no-files-found: warn
+          retention-days: 7

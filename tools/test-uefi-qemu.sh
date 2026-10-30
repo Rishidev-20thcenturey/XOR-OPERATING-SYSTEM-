@@ -1,14 +1,16 @@
 #!/bin/sh
-# Boot the built XOR ISO through OVMF/UEFI, wait for the live graphical
+# Boot the built XOR ISO through firmware, wait for the live graphical
 # target, and capture a screenshot.  This is the firmware gate that the
 # direct-kernel QEMU check does not cover.
 #
 # Usage: tools/test-uefi-qemu.sh ISO [EVIDENCE_DIR]
+#        XOR_FIRMWARE=bios tools/test-uefi-qemu.sh ISO [EVIDENCE_DIR]
 # Exit status is 0 after writing evidence; result.txt says PASS/FAIL.
 set -eu
 
 ISO=${1:?usage: test-uefi-qemu.sh ISO [EVIDENCE_DIR]}
 OUT=${2:-uefi-evidence}
+FIRMWARE=${XOR_FIRMWARE:-uefi}
 TIMEOUT=${UEFI_TIMEOUT:-1800}
 SCREENSHOT_WAIT=${UEFI_SCREENSHOT_WAIT:-240}
 
@@ -103,39 +105,49 @@ finish() {
         echo "firmware_vars=$FIRMWARE_VARS"
         echo "iso=$ISO"
         echo "iso_sha256=$(sha256sum "$ISO" | cut -d' ' -f1)"
-        echo "note=ISO booted through OVMF/UEFI; no direct kernel/initrd was supplied."
+        if [ "$FIRMWARE" = bios ]; then
+            echo "note=ISO booted through SeaBIOS; no direct kernel/initrd was supplied."
+        else
+            echo "note=ISO booted through OVMF/UEFI; no direct kernel/initrd was supplied."
+        fi
     } > "$OUT/result.txt"
     cat "$OUT/result.txt"
     exit 0
 }
 
-# Prefer a matching code/vars pair; fall back to a combined firmware image.
-if [ -f /usr/share/OVMF/OVMF_CODE_4M.fd ] && [ -f /usr/share/OVMF/OVMF_VARS_4M.fd ]; then
-    FIRMWARE_MODE=pflash
-    FIRMWARE_CODE=/usr/share/OVMF/OVMF_CODE_4M.fd
-    FIRMWARE_VARS="$OUT/OVMF_VARS.fd"
-    cp /usr/share/OVMF/OVMF_VARS_4M.fd "$FIRMWARE_VARS"
-elif [ -f /usr/share/OVMF/OVMF_CODE.fd ] && [ -f /usr/share/OVMF/OVMF_VARS.fd ]; then
-    FIRMWARE_MODE=pflash
-    FIRMWARE_CODE=/usr/share/OVMF/OVMF_CODE.fd
-    FIRMWARE_VARS="$OUT/OVMF_VARS.fd"
-    cp /usr/share/OVMF/OVMF_VARS.fd "$FIRMWARE_VARS"
-elif [ -f /usr/share/qemu/OVMF.fd ]; then
-    FIRMWARE_MODE=bios
-    FIRMWARE_CODE=/usr/share/qemu/OVMF.fd
-elif [ -f /usr/share/OVMF/OVMF.fd ]; then
-    FIRMWARE_MODE=bios
-    FIRMWARE_CODE=/usr/share/OVMF/OVMF.fd
+if [ "$FIRMWARE" = bios ]; then
+    FIRMWARE_MODE=seabios
 else
-    RESULT=FAIL
-    SIGNAL="OVMF firmware not found"
-    finish
+    # Prefer a matching code/vars pair; fall back to a combined firmware image.
+    if [ -f /usr/share/OVMF/OVMF_CODE_4M.fd ] && [ -f /usr/share/OVMF/OVMF_VARS_4M.fd ]; then
+        FIRMWARE_MODE=pflash
+        FIRMWARE_CODE=/usr/share/OVMF/OVMF_CODE_4M.fd
+        FIRMWARE_VARS="$OUT/OVMF_VARS.fd"
+        cp /usr/share/OVMF/OVMF_VARS_4M.fd "$FIRMWARE_VARS"
+    elif [ -f /usr/share/OVMF/OVMF_CODE.fd ] && [ -f /usr/share/OVMF/OVMF_VARS.fd ]; then
+        FIRMWARE_MODE=pflash
+        FIRMWARE_CODE=/usr/share/OVMF/OVMF_CODE.fd
+        FIRMWARE_VARS="$OUT/OVMF_VARS.fd"
+        cp /usr/share/OVMF/OVMF_VARS.fd "$FIRMWARE_VARS"
+    elif [ -f /usr/share/qemu/OVMF.fd ]; then
+        FIRMWARE_MODE=bios
+        FIRMWARE_CODE=/usr/share/qemu/OVMF.fd
+    elif [ -f /usr/share/OVMF/OVMF.fd ]; then
+        FIRMWARE_MODE=bios
+        FIRMWARE_CODE=/usr/share/OVMF/OVMF.fd
+    else
+        RESULT=FAIL
+        SIGNAL="OVMF firmware not found"
+        finish
+    fi
 fi
 
 if [ "$FIRMWARE_MODE" = pflash ]; then
     FW_ARGS="-drive if=pflash,format=raw,readonly=on,file=$FIRMWARE_CODE -drive if=pflash,format=raw,file=$FIRMWARE_VARS"
-else
+elif [ "$FIRMWARE_MODE" = bios ]; then
     FW_ARGS="-bios $FIRMWARE_CODE"
+else
+    FW_ARGS=""
 fi
 
 echo "Booting $ISO through $FIRMWARE_MODE firmware (timeout ${TIMEOUT}s)"
