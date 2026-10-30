@@ -43,11 +43,13 @@ live-session gate with a non-blank screenshot, passed an OVMF/UEFI ISO
 boot with a non-blank 1280x800 desktop screenshot, and installed the ISO
 to a 20 GiB virtio disk that booted again (`result=PASS`,
 `install_result=PASS`, `second_boot_result=PASS`). A follow-up gate
-(40997749602) booted the same ISO through QEMU SeaBIOS to a non-blank
-XFCE screenshot. The direct QEMU job boots the extracted kernel/initrd,
-and the install job boots the installer kernel directly; the UEFI and
-BIOS jobs are the firmware/bootloader paths. Secure Boot and firmware
-boot menus remain untested.
+(41001710930) booted the same ISO through QEMU SeaBIOS to a non-blank
+Aurora desktop and ran `demo-reader` through `xor-broker launch` inside
+the guest; the sandbox boundary and the allowed/denied broker reads
+passed. The direct QEMU job boots the extracted kernel/initrd, and the
+install job boots the installer kernel directly; the UEFI and BIOS jobs
+are the firmware/bootloader paths. Secure Boot and firmware boot menus
+remain untested.
 
 ## The 200-scenario corpus
 
@@ -104,9 +106,11 @@ expectation is corrected with a written justification.
   installed disk.
 * Firmware/bootloader boot: the OVMF/UEFI gate boots the ISO through
   firmware (no direct kernel/initrd) to the XOR desktop, and the SeaBIOS
-  mode boots the same ISO through the BIOS path. Secure Boot, firmware
-  boot menus and broad physical hardware remain unverified; test those on
-  a team machine before claiming the full bootloader path.
+  mode boots the same ISO through the BIOS path. The SeaBIOS gate also
+  runs `tools/guest-sandbox-check.sh` via QGA to prove the broker/bubblewrap
+  boundary on the live guest. Secure Boot, firmware boot menus and broad
+  physical hardware remain unverified; test those on a team machine before
+  claiming the full bootloader path.
 * Fuzzing the manifest/wire parsers, sustained concurrency/load (the
   audit log and `max_uses` have two-writer/concurrent-process tests, but
   the daemon remains single-threaded and has no rate limiting), and

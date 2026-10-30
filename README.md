@@ -57,7 +57,8 @@ Modern operating systems leak user data by default, grant broad ambient permissi
 | **Live ISO Image** | `VERIFIED` | 1.731 GiB live hybrid ISO (`SHA-256: 08af43a2a6d1bd3207c627b7b47d11344e5d347c6a746c1e60a3a0e1675dfa83`) |
 | **QEMU Live Display** | `VERIFIED BOOT` | [Actions Run 40819648638](https://github.com/Rishidev-20thcenturey/XOR-OPERATING-SYSTEM-/actions/runs/40819648638) `qemu_result=PASS`, non-blank screenshot captured |
 | **UEFI/OVMF Boot** | `VERIFIED` | Same run booted the ISO through OVMF firmware (no `-kernel`/`-initrd`) to the XOR desktop; non-blank 1280x800 screenshot captured |
-| **BIOS/SeaBIOS Boot** | `VERIFIED (QEMU)` | Follow-up run 40997749602 booted the same ISO through SeaBIOS (no `-kernel`/`-initrd`) to a non-blank 1280x800 XFCE screenshot |
+| **BIOS/SeaBIOS Boot** | `VERIFIED (QEMU)` | [Run 41001710930](https://github.com/Rishidev-20thcenturey/XOR-OPERATING-SYSTEM-/actions/runs/41001710930) booted the same ISO through SeaBIOS (no `-kernel`/`-initrd`) to a non-blank 1280x800 Aurora desktop |
+| **Broker Sandbox E2E** | `VERIFIED` | Same BIOS run launched `demo-reader` through `xor-broker launch`; host files/network hidden, granted read succeeded, ungranted read denied (`sandbox_result=PASS`) |
 | **Install-to-Disk** | `VERIFIED` | Same run installed to a 20 GiB virtio disk and booted the installed disk again (`install_result=PASS`, `second_boot_result=PASS`) |
 | **Secure Boot / Hardware** | `NOT VERIFIED` | Secure Boot, firmware menus and broad physical hardware remain open |
 
@@ -226,7 +227,7 @@ XOR-OPERATING-SYSTEM-/
 
 ## 📜 // 09. SECURITY BOUNDARY & HONEST CLAIMS
 
-* **API Boundary:** The broker currently mediates requests submitted *through its API*. System-wide syscall isolation via unprivileged user namespaces (Bubblewrap / Landlock) is planned for Phase 05.
+* **API Boundary:** The broker mediates requests submitted *through its API*. `xor-broker launch` confines cooperating tools with bubblewrap and is now verified end-to-end on the live ISO; system-wide enforcement for arbitrary same-UID processes (Bubblewrap / Landlock) remains planned for Phase 05.
 * **Crash Semantics:** Operations and audit writes are not crash-atomic; a kernel panic between action execution and disk sync can leave a count unrecorded.
 * **Boot Chain:** The live ISO is proven through OVMF/UEFI and SeaBIOS firmware in QEMU, and the installed disk boots again through SeaBIOS. Secure Boot, firmware boot menus and native hardware remain unverified.
 

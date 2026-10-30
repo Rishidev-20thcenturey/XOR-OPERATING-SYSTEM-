@@ -89,11 +89,12 @@ the ISO, passed the direct-kernel QEMU/TCG live-session gate, passed an
 OVMF/UEFI ISO boot with a non-blank 1280x800 XOR desktop screenshot,
 installed the ISO to a 20 GiB virtio disk, and booted that installed disk
 again (`result=PASS`, `install_result=PASS`, `second_boot_result=PASS`).
-A follow-up run (40997749602) booted the same ISO through QEMU SeaBIOS.
-The direct QEMU and install jobs boot kernels directly; the UEFI and BIOS
-jobs are the firmware paths. Secure Boot, firmware menus and interactive
-GTK QA remain follow-up work; see `docs/TEST_RESULTS.md` for the exact
-evidence and caveats.
+A follow-up run (41001710930) booted the same ISO through QEMU SeaBIOS
+and passed the broker/bubblewrap guest check. The direct QEMU and install
+jobs boot kernels directly; the UEFI and BIOS jobs are the firmware
+paths. Secure Boot, firmware menus and interactive GTK QA remain
+follow-up work; see `docs/TEST_RESULTS.md` for the exact evidence and
+caveats.
 
 ## Where new work belongs
 

@@ -39,8 +39,9 @@ A release can honestly call itself the complete XOR OS when:
 
 **Status (2026-10-30):** ISO build, direct-kernel QEMU boot, OVMF/UEFI
 ISO boot, install-to-disk and second boot passed in Actions run
-40819648638; SeaBIOS ISO boot passed in follow-up run 40997749602. Secure
-Boot, firmware menus, broad hardware and interactive GTK QA remain open.
+40819648638; SeaBIOS ISO boot and the broker/bubblewrap boundary passed in
+follow-up run 41001710930. Secure Boot, firmware menus, broad hardware and
+interactive GTK QA remain open.
 
 ## Phase 2 — XOR Shell “Aurora”
 

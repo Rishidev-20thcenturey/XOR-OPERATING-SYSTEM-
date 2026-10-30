@@ -13,9 +13,10 @@ NOT RUN with the exact blocker. Reproduce locally with `tools/test.sh`.
 The latest ISO-build/QEMU/UEFI/install evidence is from GitHub Actions run
 [40819648638](https://github.com/Rishidev-20thcenturey/XOR-OPERATING-SYSTEM-/actions/runs/40819648638),
 described in the 2026-10-29 section below. A follow-up run
-[40997749602](https://github.com/Rishidev-20thcenturey/XOR-OPERATING-SYSTEM-/actions/runs/40997749602)
-booted the same ISO through SeaBIOS. The earlier 2026-10-28 run is kept as
-historical evidence; its UEFI gate was not yet passing.
+[41001710930](https://github.com/Rishidev-20thcenturey/XOR-OPERATING-SYSTEM-/actions/runs/41001710930)
+booted the same ISO through SeaBIOS and passed the broker/bubblewrap
+sandbox check. The earlier 2026-10-28 run is kept as historical evidence;
+its UEFI gate was not yet passing.
 
 ## Unit tests — PASS (112 locally on 2026-10-28; 96 in earlier CI)
 
@@ -322,35 +323,55 @@ Not verified in this run:
   dialogs and Ctrl+1–4 Activity filters still require a human test.
 * KVM acceleration; this remains a bounded TCG run.
 
-## GitHub Actions BIOS/SeaBIOS ISO boot gate — 2026-10-30 (run 40997749602)
+## GitHub Actions BIOS/SeaBIOS + broker sandbox gate — 2026-10-30 (run 41001710930)
 
-Commit under test: `d049725f1777ca33cd8d82766d841682efbf9ec9` on
+Commit under test: `879fdc26bd1af85e2d817a5c9eb6ea3578a681d1` on
 `feat/sandboxed-app-launch-prototype`.
 
 This was a follow-up check against the ISO from run 40819648638, not a
 new image build. The temporary check workflow booted the same ISO through
-SeaBIOS, with no `-kernel` or `-initrd` supplied:
+SeaBIOS with no `-kernel` or `-initrd`, then ran a guest-side check via
+QEMU guest agent:
 
 * ISO SHA-256:
   `08af43a2a6d1bd3207c627b7b47d11344e5d347c6a746c1e60a3a0e1675dfa83`
   (same artifact as run 40819648638).
-* `result=PASS`, `firmware_mode=seabios`, `screenshot_ok=1`.
-* The run created `2026-10-30T03:30:21Z` and completed
-  `03:34:40Z`; the job took 4m16s.
-* The captured screenshot is 1280x800 and 13,129 bytes. It was visually
-  inspected and shows the XFCE panel and dock, proving the graphical
-  session started from the BIOS boot path.
-* Evidence artifact `xor-bios-gate-debug-40997749602` is 132,459 bytes
-  (serial log, screenshots, result).
-* The gate is `tools/test-uefi-qemu.sh` with `XOR_FIRMWARE=bios`; it is
-  now wired into `.github/workflows/iso-build.yml` as a required release
-  gate. This evidence is from the temporary check against the existing
-  ISO; the next full ISO run will exercise the integrated step.
+* `result=PASS`, `firmware_mode=seabios`, `screenshot_ok=1`,
+  `sandbox_result=PASS`.
+* The run created `2026-10-30T04:13:40Z` and completed
+  `04:17:38Z`; the job took 3m54s.
+* The captured screenshot is 1280x800 and 782,909 bytes. It was visually
+  inspected and shows the full Aurora desktop: panel, dock, Home/File
+  System/Trash icons and the Royal Aurora wallpaper.
+* `sandbox.log` records:
+  ```
+  qga_exitcode=0
+  sandbox_boundary_ok
+  XOR demo notes.
+  The demo-reader tool may read this file only.
+  Broker refused the read: read denied: no_capability
+  ungranted_read_denied
+  ```
+  The guest check asserts that `/etc/passwd`, `/home/user/.ssh`,
+  `/tmp/xor-host-marker` and `/run/user/1000` are hidden, no host network
+  interface is visible, the granted notes read succeeds, and an ungranted
+  secret read is denied.
+* Evidence artifact `xor-sandbox-gate-debug-41001710930` is 2,080,843
+  bytes (serial log, screenshots, sandbox log, result).
+* The gate is `tools/test-uefi-qemu.sh` with
+  `XOR_FIRMWARE=bios XOR_SANDBOX_CHECK=1`; it is wired into
+  `.github/workflows/iso-build.yml` as a required release gate. This
+  evidence is from the temporary check against the existing ISO; the next
+  full ISO run will exercise the integrated step.
+* The first BIOS-only pass was run 40997749602 (screenshot showed the
+  panel and dock); this run supersedes it with the full desktop and the
+  sandbox check.
 
 Not verified here:
 * Secure Boot, firmware boot menus, physical BIOS hardware, and broad
   hardware. This is a QEMU SeaBIOS boot, not a physical-machine test.
-* Interactive GTK QA and broker/bubblewrap launch on the booted ISO.
+* Interactive GTK QA (launcher focus/search, window buttons, Control
+  Centre dialogs, broker confirmation keyboard flow, Activity filters).
 
 ## GitHub Actions ISO build, QEMU live-session and install-to-disk gate — 2026-10-28 (run 40737390213)
 
@@ -488,16 +509,17 @@ Not verified in this run:
 |---|---|---|
 | ISO build (local Termux) | Passed in GitHub Actions run 40819648638; see the 2026-10-29 section above for exact checksum and artifact evidence. Termux has no `lb`. | Local `sudo tools/build-iso.sh` remains available for a team-machine rebuild. |
 | Install-to-disk + second boot (local Termux) | Passed in GitHub Actions run 40819648638 (`result=PASS`, `install_result=PASS`, `second_boot_result=PASS`); Termux has no QEMU. | Re-run the `install-to-disk` job for a new ISO; the serial logs are in `xor-install-evidence-40819648638`. |
-| Secure Boot, firmware menus | The accepted UEFI gate boots the ISO through OVMF and reaches the XOR desktop. Secure Boot and firmware boot menus are still not exercised; the install gate boots the installer kernel directly and the second boot uses SeaBIOS from the installed disk. The ISO itself also boots through QEMU SeaBIOS (run 40997749602). | Test Secure Boot and firmware boot menus on a team machine; capture serial logs and a screenshot. |
-| GTK interaction | The final screenshot shows the Aurora desktop on the live ISO, but there is still no unattended interactive test for launcher focus/search, Wnck window buttons, Control Centre actions, broker GTK confirmation or Activity filters. | On the booted ISO: verify the Aurora panel/dock/launcher/Command Centre/Control Centre; run `xor-demo-writer`, verify the Deny-focused dialog, Esc denies and the 120 s timeout; open XOR Activity and check Ctrl+1–4 / Ctrl+F / Esc. Non-GTK cores and headless text/status modes are tested. |
+| Secure Boot, firmware menus | The accepted UEFI gate boots the ISO through OVMF and reaches the XOR desktop. Secure Boot and firmware boot menus are still not exercised; the install gate boots the installer kernel directly and the second boot uses SeaBIOS from the installed disk. The ISO itself also boots through QEMU SeaBIOS (run 41001710930). | Test Secure Boot and firmware boot menus on a team machine; capture serial logs and a screenshot. |
+| GTK interaction | The final screenshot shows the Aurora desktop on the live ISO, and the broker/bubblewrap boundary now passes on the live ISO (run 41001710930). There is still no unattended interactive test for launcher focus/search, Wnck window buttons, Control Centre actions, broker GTK confirmation or Activity filters. | On the booted ISO: verify the Aurora panel/dock/launcher/Command Centre/Control Centre; run `xor-demo-writer`, verify the Deny-focused dialog, Esc denies and the 120 s timeout; open XOR Activity and check Ctrl+1–4 / Ctrl+F / Esc. Non-GTK cores and headless text/status modes are tested. |
 
 Consequence, stated plainly: the ISO builds, is checksummed and
 artifact-backed; the bounded QEMU/TCG direct-kernel boot reaches a live
 XFCE session; the ISO also boots through OVMF/UEFI firmware (no direct
 kernel/initrd) to the XOR desktop with the Royal Aurora wallpaper visibly
-confirmed; it also boots through QEMU SeaBIOS; and the installer writes
-that system to a virtio disk that boots again. That is a real
-build/live/UEFI/BIOS/install pass, not a daily-use claim: Secure Boot,
-firmware menus, interactive GTK QA and broad hardware verification remain
-open. The first team-machine task is to exercise Aurora and broker
+confirmed; it also boots through QEMU SeaBIOS; the broker/bubblewrap
+boundary passes on the live ISO; and the installer writes that system to a
+virtio disk that boots again. That is a real
+build/live/UEFI/BIOS/sandbox/install pass, not a daily-use claim: Secure
+Boot, firmware menus, interactive GTK QA and broad hardware verification
+remain open. The first team-machine task is to exercise Aurora and broker
 confirmations interactively on real hardware.

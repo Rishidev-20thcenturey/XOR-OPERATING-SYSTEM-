@@ -9,9 +9,9 @@ Status key: ✅ implemented & tested · 🧪 implemented, partly verified ·
 * ✅ Debian Live Build config (trixie/amd64/XFCE), install hook, LightDM autologin
 * ✅ `tools/build-iso.sh`, `tools/run-qemu.sh` (fixed virtio target)
 * ✅ ISO build + bounded QEMU/TCG live-session boot + OVMF/UEFI ISO boot
-  verified in GitHub Actions run 40819648638; SeaBIOS ISO boot verified
-  in follow-up run 40997749602. Secure Boot and firmware menus still
-  unverified
+  verified in GitHub Actions run 40819648638; SeaBIOS ISO boot and the
+  broker/bubblewrap boundary verified in follow-up run 41001710930.
+  Secure Boot and firmware menus still unverified
 * ✅ Install-to-disk + second boot verified in the same run (`result=PASS`,
   `install_result=PASS`, `second_boot_result=PASS`); interactive GTK QA
   still open
@@ -57,8 +57,9 @@ Status key: ✅ implemented & tested · 🧪 implemented, partly verified ·
 * 🧪 Opt-in bubblewrap launcher (`xor-broker launch`) with private
   namespaces, cleared environment and only broker socket + own token
   file; per-tool bearer tokens with revocation. Headless argv/token tests
-  pass; no on-desktop bwrap run yet, and tokens are not bound to peer
-  identity/sandbox instance.
+  pass, and the live-ISO gate now launches `demo-reader` through the
+  broker and proves host files/network are hidden; tokens are still not
+  bound to peer identity/sandbox instance.
 * ⬜ Apply the sandbox to every tool/assistant and investigate Flatpak
   portals
 * Manifest/wire-protocol fuzzing; rate limiting; audit anchoring
