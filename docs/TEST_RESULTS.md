@@ -1,4 +1,4 @@
-# Test results — actual, from available sandboxes and GitHub Actions (2026-10-25 to 2026-10-29)
+# Test results — actual, from available sandboxes and GitHub Actions (2026-10-25 to 2026-10-30)
 
 Original baseline environment: Debian 12 sandbox, Python 3.11.2,
 2 vCPU / 3.8 GiB, **no QEMU, no /dev/kvm, no live-build, no Debian
@@ -12,8 +12,10 @@ verifiable in each environment was run; what could not run is listed as
 NOT RUN with the exact blocker. Reproduce locally with `tools/test.sh`.
 The latest ISO-build/QEMU/UEFI/install evidence is from GitHub Actions run
 [40819648638](https://github.com/Rishidev-20thcenturey/XOR-OPERATING-SYSTEM-/actions/runs/40819648638),
-described in the 2026-10-29 section below. The earlier 2026-10-28 run is
-kept as historical evidence; its UEFI gate was not yet passing.
+described in the 2026-10-29 section below. A follow-up run
+[40997749602](https://github.com/Rishidev-20thcenturey/XOR-OPERATING-SYSTEM-/actions/runs/40997749602)
+booted the same ISO through SeaBIOS. The earlier 2026-10-28 run is kept as
+historical evidence; its UEFI gate was not yet passing.
 
 ## Unit tests — PASS (112 locally on 2026-10-28; 96 in earlier CI)
 
@@ -312,12 +314,43 @@ Install-to-disk and second boot:
   install artifact was not downloaded locally.
 
 Not verified in this run:
-* Secure Boot, firmware boot menus, BIOS ISO boot and broad physical
-  hardware. UEFI/OVMF ISO boot is now verified in QEMU.
+* Secure Boot, firmware boot menus and broad physical hardware. UEFI/OVMF
+  ISO boot is now verified in QEMU; the separate SeaBIOS gate is described
+  in the 2026-10-30 section above.
 * Interactive GTK QA beyond the captured desktop: launcher focus/search,
   Wnck window buttons, Control Centre actions, broker GTK confirmation
   dialogs and Ctrl+1–4 Activity filters still require a human test.
 * KVM acceleration; this remains a bounded TCG run.
+
+## GitHub Actions BIOS/SeaBIOS ISO boot gate — 2026-10-30 (run 40997749602)
+
+Commit under test: `d049725f1777ca33cd8d82766d841682efbf9ec9` on
+`feat/sandboxed-app-launch-prototype`.
+
+This was a follow-up check against the ISO from run 40819648638, not a
+new image build. The temporary check workflow booted the same ISO through
+SeaBIOS, with no `-kernel` or `-initrd` supplied:
+
+* ISO SHA-256:
+  `08af43a2a6d1bd3207c627b7b47d11344e5d347c6a746c1e60a3a0e1675dfa83`
+  (same artifact as run 40819648638).
+* `result=PASS`, `firmware_mode=seabios`, `screenshot_ok=1`.
+* The run created `2026-10-30T03:30:21Z` and completed
+  `03:34:40Z`; the job took 4m16s.
+* The captured screenshot is 1280x800 and 13,129 bytes. It was visually
+  inspected and shows the XFCE panel and dock, proving the graphical
+  session started from the BIOS boot path.
+* Evidence artifact `xor-bios-gate-debug-40997749602` is 132,459 bytes
+  (serial log, screenshots, result).
+* The gate is `tools/test-uefi-qemu.sh` with `XOR_FIRMWARE=bios`; it is
+  now wired into `.github/workflows/iso-build.yml` as a required release
+  gate. This evidence is from the temporary check against the existing
+  ISO; the next full ISO run will exercise the integrated step.
+
+Not verified here:
+* Secure Boot, firmware boot menus, physical BIOS hardware, and broad
+  hardware. This is a QEMU SeaBIOS boot, not a physical-machine test.
+* Interactive GTK QA and broker/bubblewrap launch on the booted ISO.
 
 ## GitHub Actions ISO build, QEMU live-session and install-to-disk gate — 2026-10-28 (run 40737390213)
 
@@ -455,16 +488,16 @@ Not verified in this run:
 |---|---|---|
 | ISO build (local Termux) | Passed in GitHub Actions run 40819648638; see the 2026-10-29 section above for exact checksum and artifact evidence. Termux has no `lb`. | Local `sudo tools/build-iso.sh` remains available for a team-machine rebuild. |
 | Install-to-disk + second boot (local Termux) | Passed in GitHub Actions run 40819648638 (`result=PASS`, `install_result=PASS`, `second_boot_result=PASS`); Termux has no QEMU. | Re-run the `install-to-disk` job for a new ISO; the serial logs are in `xor-install-evidence-40819648638`. |
-| Secure Boot, firmware menus, BIOS ISO boot | The accepted UEFI gate boots the ISO through OVMF and reaches the XOR desktop. Secure Boot, firmware boot menus and BIOS ISO boot are still not exercised; the install gate boots the installer kernel directly and the second boot uses SeaBIOS from the installed disk. | Test Secure Boot/firmware menus and a BIOS ISO boot on a team machine; capture serial logs and a screenshot. |
+| Secure Boot, firmware menus | The accepted UEFI gate boots the ISO through OVMF and reaches the XOR desktop. Secure Boot and firmware boot menus are still not exercised; the install gate boots the installer kernel directly and the second boot uses SeaBIOS from the installed disk. The ISO itself also boots through QEMU SeaBIOS (run 40997749602). | Test Secure Boot and firmware boot menus on a team machine; capture serial logs and a screenshot. |
 | GTK interaction | The final screenshot shows the Aurora desktop on the live ISO, but there is still no unattended interactive test for launcher focus/search, Wnck window buttons, Control Centre actions, broker GTK confirmation or Activity filters. | On the booted ISO: verify the Aurora panel/dock/launcher/Command Centre/Control Centre; run `xor-demo-writer`, verify the Deny-focused dialog, Esc denies and the 120 s timeout; open XOR Activity and check Ctrl+1–4 / Ctrl+F / Esc. Non-GTK cores and headless text/status modes are tested. |
 
 Consequence, stated plainly: the ISO builds, is checksummed and
 artifact-backed; the bounded QEMU/TCG direct-kernel boot reaches a live
 XFCE session; the ISO also boots through OVMF/UEFI firmware (no direct
 kernel/initrd) to the XOR desktop with the Royal Aurora wallpaper visibly
-confirmed; and the installer writes that system to a virtio disk that
-boots again. That is a real build/live/UEFI/install pass, not a daily-use
-claim: Secure Boot, firmware menus, BIOS ISO boot, interactive GTK QA and
-broad hardware verification remain open. The first team-machine task is
-to exercise Aurora and broker confirmations interactively on real
-hardware.
+confirmed; it also boots through QEMU SeaBIOS; and the installer writes
+that system to a virtio disk that boots again. That is a real
+build/live/UEFI/BIOS/install pass, not a daily-use claim: Secure Boot,
+firmware menus, interactive GTK QA and broad hardware verification remain
+open. The first team-machine task is to exercise Aurora and broker
+confirmations interactively on real hardware.

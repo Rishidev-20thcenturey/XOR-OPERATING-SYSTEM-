@@ -34,10 +34,11 @@ is artifact-backed. The direct-kernel QEMU/TCG check passed, the ISO also
 booted through OVMF/UEFI firmware (no direct kernel/initrd) to the XOR
 desktop with a non-blank screenshot, and the same run installed the ISO
 to a 20 GiB virtio disk and booted that disk again (`result=PASS`,
-`install_result=PASS`, `second_boot_result=PASS`). The direct QEMU check
-extracts the kernel/initrd and the install check boots the installer
-kernel directly; the UEFI check is the firmware/bootloader path. Secure
-Boot, firmware menus and BIOS ISO boot are still not exercised. See
-`docs/TEST_RESULTS.md` for exact build, artifact, QEMU, UEFI and install
-evidence, and `docs/DEVELOPMENT.md` for local build steps and
-troubleshooting.
+`install_result=PASS`, `second_boot_result=PASS`). A follow-up run
+(40997749602) booted the same ISO through QEMU SeaBIOS. The direct QEMU
+check extracts the kernel/initrd and the install check boots the
+installer kernel directly; the UEFI and BIOS checks are the
+firmware/bootloader paths. Secure Boot and firmware menus are still not
+exercised. See `docs/TEST_RESULTS.md` for exact build, artifact, QEMU,
+UEFI, BIOS and install evidence, and `docs/DEVELOPMENT.md` for local
+build steps and troubleshooting.

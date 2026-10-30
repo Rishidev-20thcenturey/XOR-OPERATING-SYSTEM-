@@ -9,8 +9,9 @@ Status key: ✅ implemented & tested · 🧪 implemented, partly verified ·
 * ✅ Debian Live Build config (trixie/amd64/XFCE), install hook, LightDM autologin
 * ✅ `tools/build-iso.sh`, `tools/run-qemu.sh` (fixed virtio target)
 * ✅ ISO build + bounded QEMU/TCG live-session boot + OVMF/UEFI ISO boot
-  verified in GitHub Actions run 40819648638; Secure Boot, firmware menus
-  and BIOS ISO boot still unverified
+  verified in GitHub Actions run 40819648638; SeaBIOS ISO boot verified
+  in follow-up run 40997749602. Secure Boot and firmware menus still
+  unverified
 * ✅ Install-to-disk + second boot verified in the same run (`result=PASS`,
   `install_result=PASS`, `second_boot_result=PASS`); interactive GTK QA
   still open
@@ -68,8 +69,8 @@ Status key: ✅ implemented & tested · 🧪 implemented, partly verified ·
 
 ## Three most important next tasks
 
-1. **Verify Secure Boot, firmware boot menus, BIOS ISO boot and broad
-   hardware** on a team machine; the OVMF/UEFI ISO boot and the
+1. **Verify Secure Boot, firmware boot menus and broad hardware** on a
+   team machine; the OVMF/UEFI and SeaBIOS ISO boots and the
    install-to-disk/second boot gates now pass in Actions.
 2. **On-desktop Milestone-2 verification**: Aurora panel/dock/launcher,
    Command/Control Centre, GTK file chooser, GTK confirmation keyboard
